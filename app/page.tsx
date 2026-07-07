@@ -10,6 +10,7 @@ const [pipeline, setPipeline] = useState(0);
 const [risk, setRisk] = useState(0);
 const [question, setQuestion] = useState("");
 const [answer, setAnswer] = useState("");
+const [thinking, setThinking] = useState(false);
 
 useEffect(() => {
   let i = 0;
@@ -222,11 +223,38 @@ useEffect(() => {
 />
 
 <button
-  onClick={() =>
-    setAnswer(
-      "Odin recommends contacting MKM Warrington, Huws Gray and City Plumbing. Estimated opportunity £32,400."
-    )
-  }
+onClick={() => {
+  setThinking(true);
+  setAnswer("");
+
+  setTimeout(() => {
+    const q = question.toLowerCase();
+
+    if (q.includes("customer") || q.includes("contact") || q.includes("call")) {
+      setAnswer(
+        "Odin recommends contacting MKM Warrington, Huws Gray and City Plumbing today. Estimated combined opportunity: £32,400."
+      );
+    } else if (q.includes("price") || q.includes("pricing") || q.includes("margin")) {
+      setAnswer(
+        "Odin recommends increasing MLCP pipe pricing by 2.4%. Estimated annual margin improvement: £18,600."
+      );
+    } else if (q.includes("risk") || q.includes("losing") || q.includes("decline")) {
+      setAnswer(
+        "Five customers are showing declining spend. Huws Gray is down 18%, City Plumbing is down 11%, and BPS has not ordered in 21 days."
+      );
+    } else if (q.includes("quote") || q.includes("chase")) {
+      setAnswer(
+        "There are 12 quotes to chase. Highest priority: MKM Warrington (£14,800), followed by Newark Plumbing (£7,450)."
+      );
+    } else {
+      setAnswer(
+        "Odin recommends focusing on pricing opportunities, customer retention and quote follow-ups today."
+      );
+    }
+
+    setThinking(false);
+  }, 900);
+}} 
   style={{
     background: "#D4AF37",
     color: "#080808",
@@ -240,6 +268,22 @@ useEffect(() => {
 >
   Ask Odin
 </button>
+
+{thinking && (
+  <div
+    style={{
+      background: "#080808",
+      borderRadius: "16px",
+      padding: "20px",
+      lineHeight: "1.7",
+      marginTop: "20px",
+      color: "#D4AF37",
+      fontWeight: "bold",
+    }}
+  >
+    🧠 Odin is thinking...
+  </div>
+)}
 
 {answer && (
   <div
