@@ -10,6 +10,7 @@ const [pipeline, setPipeline] = useState(0);
 const [risk, setRisk] = useState(0);
 const [question, setQuestion] = useState("");
 const [answer, setAnswer] = useState("");
+const [displayAnswer, setDisplayAnswer] = useState("");
 const [thinking, setThinking] = useState(false);
 
 useEffect(() => {
@@ -226,6 +227,9 @@ useEffect(() => {
 onClick={() => {
   setThinking(true);
   setAnswer("");
+  setDisplayAnswer("");
+
+  
 
   setTimeout(() => {
     const q = question.toLowerCase();
@@ -294,7 +298,7 @@ onClick={() => {
       lineHeight: "1.7",
     }}
   >
-    {answer}
+    {displayAnswer}
   </div>
 )} 
             </div>
