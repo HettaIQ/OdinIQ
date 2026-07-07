@@ -1,4 +1,33 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
 export default function Home() {
+  const [score, setScore] = useState(0);
+const [revenue, setRevenue] = useState(0);
+const [margin, setMargin] = useState(0);
+const [pipeline, setPipeline] = useState(0);
+const [risk, setRisk] = useState(0);
+const [question, setQuestion] = useState("");
+const [answer, setAnswer] = useState("");
+
+useEffect(() => {
+  let i = 0;
+
+  const timer = setInterval(() => {
+    i++;
+
+    setScore(Math.min(i, 92));
+    setRevenue(Math.min(i * 14000, 1280000));
+    setMargin(Math.min(i * 0.33, 29.8));
+    setPipeline(Math.min(i * 3700, 342000));
+    setRisk(Math.min(i / 5, 17));
+
+    if (i >= 92) clearInterval(timer);
+  }, 20);
+
+  return () => clearInterval(timer);
+}, []);
   const stats = [
     ["Sales Opportunities", "£48,231"],
     ["Customers At Risk", "17"],
@@ -14,11 +43,11 @@ export default function Home() {
   ];
 
   const dashboardStats = [
-    ["Revenue", "£1.28m"],
-    ["Margin", "29.8%"],
-    ["Pipeline", "£342k"],
-    ["At Risk", "17"],
-  ];
+  ["Revenue", `£${(revenue / 1000000).toFixed(2)}m`],
+  ["Margin", `${margin.toFixed(1)}%`],
+  ["Pipeline", `£${Math.round(pipeline / 1000)}k`],
+  ["At Risk", `${Math.round(risk)}`],
+];
 
   return (
     <main style={{ minHeight: "100vh", background: "#080808", color: "white", fontFamily: "Arial, sans-serif" }}>
@@ -50,7 +79,7 @@ export default function Home() {
 
         <div style={{ background: "#181818", border: "1px solid #2C2C2C", borderRadius: "28px", padding: "28px" }}>
           <p style={{ color: "#BBBBBB" }}>Commercial Score</p>
-          <h2 style={{ fontSize: "72px", margin: "10px 0" }}>92%</h2>
+          <h2 style={{ fontSize: "72px", margin: "10px 0" }}>{score}% </h2>
           <p style={{ color: "#D4AF37" }}>Strong growth potential detected</p>
 
           <div style={{ marginTop: "34px" }}>
@@ -99,24 +128,131 @@ export default function Home() {
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
             <div style={{ background: "#0E0E0E", border: "1px solid #252525", borderRadius: "22px", padding: "28px" }}>
-              <h3 style={{ fontSize: "24px", marginBottom: "20px" }}>AI Recommendations</h3>
-              {[
-                "Chase MKM Warrington quote worth £14,800.",
-                "Increase MLCP pipe pricing by 2.4%.",
-                "Contact 5 customers showing reduced spend.",
-                "Promote manifold bundles to pipe-only buyers.",
-              ].map((item) => (
-                <p key={item} style={{ color: "#B8B8B8", marginBottom: "16px" }}>✓ {item}</p>
-              ))}
+              <h3 style={{ fontSize: "24px", marginBottom: "20px" }}>Odin Recommendations</h3>
+              
+                <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginTop: "20px" }}>
+
+  <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+    <span style={{
+      background:"#2E7D32",
+      color:"white",
+      padding:"4px 10px",
+      borderRadius:"20px",
+      fontSize:"12px",
+      fontWeight:"bold"
+    }}>
+      HIGH
+    </span>
+
+    <span>Chase MKM Warrington quote worth £14,800.</span>
+  </div>
+
+  <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+    <span style={{
+      background:"#EF6C00",
+      color:"white",
+      padding:"4px 10px",
+      borderRadius:"20px",
+      fontSize:"12px",
+      fontWeight:"bold"
+    }}>
+      PRICING
+    </span>
+
+    <span>Increase MLCP pipe pricing by 2.4%.</span>
+  </div>
+
+  <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+    <span style={{
+      background:"#C62828",
+      color:"white",
+      padding:"4px 10px",
+      borderRadius:"20px",
+      fontSize:"12px",
+      fontWeight:"bold"
+    }}>
+      RISK
+    </span>
+
+    <span>Contact 5 customers showing reduced spend.</span>
+  </div>
+
+  <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+    <span style={{
+      background:"#1565C0",
+      color:"white",
+      padding:"4px 10px",
+      borderRadius:"20px",
+      fontSize:"12px",
+      fontWeight:"bold"
+    }}>
+      UPSELL
+    </span>
+
+    <span>Promote manifold bundles to pipe-only buyers.</span>
+  </div>
+
+</div>
+              
             </div>
 
             <div style={{ background: "rgba(212,175,55,0.08)", border: "1px solid rgba(212,175,55,0.25)", borderRadius: "22px", padding: "28px" }}>
-              <h3 style={{ fontSize: "24px", marginBottom: "20px" }}>Ask Odin</h3>
-              <p style={{ color: "#B8B8B8", marginBottom: "18px" }}>Which customers should I contact today?</p>
-              <div style={{ background: "#080808", borderRadius: "16px", padding: "20px", lineHeight: "1.7" }}>
-                Visit MKM Warrington, Huws Gray and City Plumbing. Estimated combined opportunity:
-                <strong style={{ color: "#D4AF37" }}> £32,400</strong>
-              </div>
+             <h3 style={{ fontSize: "24px", marginBottom: "20px" }}>
+  Ask Odin
+</h3>
+
+<p style={{ color: "#B8B8B8", marginBottom: "16px" }}>
+  Ask a commercial question.
+</p>
+
+<input
+  value={question}
+  onChange={(e) => setQuestion(e.target.value)}
+  placeholder="Which customers should I contact today?"
+  style={{
+    width: "100%",
+    padding: "16px",
+    background: "#080808",
+    color: "white",
+    border: "1px solid #333",
+    borderRadius: "12px",
+    fontSize: "16px",
+    marginBottom: "16px",
+  }}
+/>
+
+<button
+  onClick={() =>
+    setAnswer(
+      "Odin recommends contacting MKM Warrington, Huws Gray and City Plumbing. Estimated opportunity £32,400."
+    )
+  }
+  style={{
+    background: "#D4AF37",
+    color: "#080808",
+    border: "none",
+    padding: "14px 24px",
+    borderRadius: "12px",
+    fontWeight: "bold",
+    cursor: "pointer",
+    marginBottom: "20px",
+  }}
+>
+  Ask Odin
+</button>
+
+{answer && (
+  <div
+    style={{
+      background: "#080808",
+      borderRadius: "16px",
+      padding: "20px",
+      lineHeight: "1.7",
+    }}
+  >
+    {answer}
+  </div>
+)} 
             </div>
           </div>
         </div>
