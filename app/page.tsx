@@ -232,32 +232,39 @@ onClick={() => {
   
 
   setTimeout(() => {
-    const q = question.toLowerCase();
+  const q = question.toLowerCase();
+  let response = "";
 
-    if (q.includes("customer") || q.includes("contact") || q.includes("call")) {
-      setAnswer(
-        "Odin recommends contacting MKM Warrington, Huws Gray and City Plumbing today. Estimated combined opportunity: £32,400."
-      );
-    } else if (q.includes("price") || q.includes("pricing") || q.includes("margin")) {
-      setAnswer(
-        "Odin recommends increasing MLCP pipe pricing by 2.4%. Estimated annual margin improvement: £18,600."
-      );
-    } else if (q.includes("risk") || q.includes("losing") || q.includes("decline")) {
-      setAnswer(
-        "Five customers are showing declining spend. Huws Gray is down 18%, City Plumbing is down 11%, and BPS has not ordered in 21 days."
-      );
-    } else if (q.includes("quote") || q.includes("chase")) {
-      setAnswer(
-        "There are 12 quotes to chase. Highest priority: MKM Warrington (£14,800), followed by Newark Plumbing (£7,450)."
-      );
-    } else {
-      setAnswer(
-        "Odin recommends focusing on pricing opportunities, customer retention and quote follow-ups today."
-      );
+  if (q.includes("customer") || q.includes("contact") || q.includes("call")) {
+    response =
+      "Odin recommends contacting MKM Warrington, Huws Gray and City Plumbing today. Estimated combined opportunity: £32,400.";
+  } else if (q.includes("price") || q.includes("pricing") || q.includes("margin")) {
+    response =
+      "Odin recommends increasing MLCP pipe pricing by 2.4%. Estimated annual margin improvement: £18,600.";
+  } else if (q.includes("risk") || q.includes("losing") || q.includes("decline")) {
+    response =
+      "Five customers are showing declining spend. Huws Gray is down 18%, City Plumbing is down 11%, and BPS has not ordered in 21 days.";
+  } else if (q.includes("quote") || q.includes("chase")) {
+    response =
+      "There are 12 quotes to chase. Highest priority: MKM Warrington (£14,800), followed by Newark Plumbing (£7,450).";
+  } else {
+    response =
+      "Odin recommends focusing on pricing opportunities, customer retention and quote follow-ups today.";
+  }
+
+  setThinking(false);
+  setAnswer(response);
+
+  let i = 0;
+  const typer = setInterval(() => {
+    i++;
+    setDisplayAnswer(response.slice(0, i));
+
+    if (i >= response.length) {
+      clearInterval(typer);
     }
-
-    setThinking(false);
-  }, 900);
+  }, 18);
+}, 900);
 }} 
   style={{
     background: "#D4AF37",
@@ -298,7 +305,11 @@ onClick={() => {
       lineHeight: "1.7",
     }}
   >
-    {displayAnswer}
+    {displayAnswer.split("\n").map((line, index) => (
+  <p key={index} style={{ marginBottom: "10px" }}>
+    {line}
+  </p>
+))}
   </div>
 )} 
             </div>
