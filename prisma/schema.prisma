@@ -1,0 +1,228 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Company {
+  id     Int    @id @default(autoincrement())
+  name   String
+  slug   String @unique
+  status String @default("ACTIVE")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships CompanyMembership[]
+  roles       Role[]
+  products    Product[]
+  agreements  CommercialAgreement[]
+}
+
+model User {
+  id           Int     @id @default(autoincrement())
+  name         String
+  email        String  @unique
+  passwordHash String?
+
+  platformRole String  @default("USER")
+  active       Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships CompanyMembership[]
+}
+
+model CompanyMembership {
+  id Int @id @default(autoincrement())
+
+  userId    Int
+  companyId Int
+  roleId    Int?
+
+  agentCode String?
+  active    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  role    Role?   @relation(fields: [roleId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, companyId])
+  @@index([companyId])
+  @@index([roleId])
+}
+
+model Role {
+  id Int @id @default(autoincrement())
+
+  companyId   Int
+  name        String
+  description String?
+  isSystem    Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company     Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  memberships CompanyMembership[]
+  permissions RolePermission[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+}
+
+model Permission {
+  id          Int     @id @default(autoincrement())
+  key         String  @unique
+  description String?
+
+  roles RolePermission[]
+}
+
+model RolePermission {
+  roleId       Int
+  permissionId Int
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+}
+
+model Product {
+  id          Int    @id @default(autoincrement())
+  productCode String @unique
+  description String
+
+  companyId Int?
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  supplier String?
+  category String?
+  brand    String?
+
+  costPrice Float?
+  listPrice Float?
+  sellPrice Float?
+  margin    Float?
+
+  active Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  merchantPrices MerchantPrice[]
+
+  @@index([companyId])
+}
+
+model MerchantPrice {
+  id           Int    @id @default(autoincrement())
+  merchantName String
+  discount     Float?
+
+  productId Int
+  product   Product @relation(fields: [productId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([merchantName, productId])
+}
+
+model CommercialAgreement {
+  id            Int     @id @default(autoincrement())
+  customerName  String
+  agreementName String
+  agreementType String?
+  status        String  @default("Active")
+
+  companyId Int?
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  startDate    DateTime?
+  endDate      DateTime?
+  renewalDate  DateTime?
+  noticePeriod String?
+
+  accountManager String?
+  buyingGroup    String?
+
+  standardDiscount Float?
+  rebatePercent    Float?
+
+  paymentTerms String?
+  creditLimit  Float?
+
+  marketingBudget Float?
+  marketingSpend  Float? @default(0)
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  documents AgreementDocument[]
+  discounts AgreementDiscount[]
+  rebates   RebateScheme[]
+
+  @@index([companyId])
+}
+
+model AgreementDocument {
+  id          Int @id @default(autoincrement())
+  agreementId Int
+
+  fileName     String
+  originalName String
+  fileType     String
+  fileSize     Int
+
+  category   String?
+  uploadedBy String?
+
+  uploadedAt DateTime @default(now())
+
+  agreement CommercialAgreement @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+}
+
+model AgreementDiscount {
+  id        Int       @id @default(autoincrement())
+  name      String
+  scope     String?
+  discount  Float
+  startDate DateTime?
+  endDate   DateTime?
+  notes     String?
+
+  agreementId Int
+  agreement   CommercialAgreement @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model RebateScheme {
+  id               Int       @id @default(autoincrement())
+  name             String
+  rebateType       String?
+  rebatePercent    Float?
+  thresholdFrom    Float?
+  thresholdTo      Float?
+  paymentFrequency String?
+  paymentDate      DateTime?
+  notes            String?
+
+  agreementId Int
+  agreement   CommercialAgreement @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

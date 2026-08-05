@@ -39,3 +39,18 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/app/generated/prisma
+# OdinIQ database files - NEVER commit
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Uploaded customer/company documents - NEVER commit
+public/uploads/
+
+# Environment secrets
+.env
+.env.local
+.env.*.local

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import AskOdin from "./components/AskOdin";
 
 export default function Home() {
   const [score, setScore] = useState(0);
@@ -196,105 +197,7 @@ useEffect(() => {
 
 </div>
               
-            </div>
-
-            <div style={{ background: "rgba(212,175,55,0.08)", border: "1px solid rgba(212,175,55,0.25)", borderRadius: "22px", padding: "28px" }}>
-             <h3 style={{ fontSize: "24px", marginBottom: "20px" }}>
-  Ask Odin
-</h3>
-
-<p style={{ color: "#B8B8B8", marginBottom: "16px" }}>
-  Ask a commercial question.
-</p>
-
-<input
-  value={question}
-  onChange={(e) => setQuestion(e.target.value)}
-  placeholder="Which customers should I contact today?"
-  style={{
-    width: "100%",
-    padding: "16px",
-    background: "#080808",
-    color: "white",
-    border: "1px solid #333",
-    borderRadius: "12px",
-    fontSize: "16px",
-    marginBottom: "16px",
-  }}
-/>
-
-<button
-onClick={() => {
-  setThinking(true);
-  setAnswer("");
-  setDisplayAnswer("");
-
-  
-
-  setTimeout(() => {
-  const q = question.toLowerCase();
-  let response = "";
-
-  if (q.includes("customer") || q.includes("contact") || q.includes("call")) {
-    response =
-      "Odin recommends contacting MKM Warrington, Huws Gray and City Plumbing today. Estimated combined opportunity: £32,400.";
-  } else if (q.includes("price") || q.includes("pricing") || q.includes("margin")) {
-    response =
-      "Odin recommends increasing MLCP pipe pricing by 2.4%. Estimated annual margin improvement: £18,600.";
-  } else if (q.includes("risk") || q.includes("losing") || q.includes("decline")) {
-    response =
-      "Five customers are showing declining spend. Huws Gray is down 18%, City Plumbing is down 11%, and BPS has not ordered in 21 days.";
-  } else if (q.includes("quote") || q.includes("chase")) {
-    response =
-      "There are 12 quotes to chase. Highest priority: MKM Warrington (£14,800), followed by Newark Plumbing (£7,450).";
-  } else {
-    response =
-      "Odin recommends focusing on pricing opportunities, customer retention and quote follow-ups today.";
-  }
-
-  setThinking(false);
-  setAnswer(response);
-
-  let i = 0;
-  const typer = setInterval(() => {
-    i++;
-    setDisplayAnswer(response.slice(0, i));
-
-    if (i >= response.length) {
-      clearInterval(typer);
-    }
-  }, 18);
-}, 900);
-}} 
-  style={{
-    background: "#D4AF37",
-    color: "#080808",
-    border: "none",
-    padding: "14px 24px",
-    borderRadius: "12px",
-    fontWeight: "bold",
-    cursor: "pointer",
-    marginBottom: "20px",
-  }}
->
-  Ask Odin
-</button>
-
-{thinking && (
-  <div
-    style={{
-      background: "#080808",
-      borderRadius: "16px",
-      padding: "20px",
-      lineHeight: "1.7",
-      marginTop: "20px",
-      color: "#D4AF37",
-      fontWeight: "bold",
-    }}
-  >
-    🧠 Odin is thinking...
-  </div>
-)}
+<AskOdin />
 
 {answer && (
   <div
