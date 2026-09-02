@@ -27,5 +27,5 @@ export async function login(formData: FormData) {
 
   await createSession(user.id);
 
-  redirect("/");
+  redirect("/dashboard");
 }

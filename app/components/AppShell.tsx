@@ -10,6 +10,7 @@ type AppShellProps = {
 
 const navigation = [
   { label: "Dashboard", href: "/" },
+  { label: "Commercial", href: "/commercial" },
   { label: "Agreements", href: "/agreements" },
   { label: "Customers", href: "/customers" },
   { label: "Products", href: "/products" },

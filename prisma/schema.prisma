@@ -15,10 +15,22 @@ model Company {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  memberships CompanyMembership[]
-  roles       Role[]
-  products    Product[]
-  agreements  CommercialAgreement[]
+  memberships             CompanyMembership[]
+  roles                   Role[]
+  products                Product[]
+  agreements              CommercialAgreement[]
+  customers               Customer[]
+  tasks                   CommercialTask[]
+  voiceNotes              CustomerVoiceNote[]
+  commercialOpportunities CommercialOpportunity[]
+  quotes                  Quote[]
+  agentAliases            AgentAlias[]
+  goodsDespatchNotes      GoodsDespatchNote[]
+  salesInvoices           SalesInvoice[]
+  salesOrders             SalesOrder[]
+  customerAccountAliases  CustomerAccountAlias[]
+  productCostHistories    ProductCostHistory[]
+  productAliases          ProductAlias[]
 }
 
 model User {
@@ -33,9 +45,10 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-   memberships CompanyMembership[]
+  memberships CompanyMembership[]
   sessions    Session[]
 }
+
 model Session {
   id Int @id @default(autoincrement())
 
@@ -65,13 +78,388 @@ model CompanyMembership {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  role    Role?   @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  user                    User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company                 Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  role                    Role?                   @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  assignedCustomers       Customer[]
+  tasks                   CommercialTask[]
+  voiceNotes              CustomerVoiceNote[]
+  commercialOpportunities CommercialOpportunity[]
+  agentOpportunities      CommercialOpportunity[] @relation("OpportunityAgent")
+  quoterOpportunities     CommercialOpportunity[] @relation("OpportunityQuoter")
+  agentQuotes             Quote[]                 @relation("QuoteAgent")
+  quoterQuotes            Quote[]                 @relation("QuoteQuoter")
+  agentHistory            CustomerAgentHistory[]
+  agentAliases            AgentAlias[]
 
   @@unique([userId, companyId])
   @@index([companyId])
   @@index([roleId])
+}
+
+model AgentAlias {
+  id Int @id @default(autoincrement())
+
+  companyId    Int
+  membershipId Int
+  alias        String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company    Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  membership CompanyMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, alias])
+  @@index([companyId])
+  @@index([membershipId])
+}
+
+model Customer {
+  id Int @id @default(autoincrement())
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  accountCode String
+  name        String
+  status      String @default("ACTIVE")
+
+  buyingGroup      String?
+  customerType     String?
+  parentCustomerId Int?
+  parentCustomer   Customer?  @relation("CustomerAccountLinks", fields: [parentCustomerId], references: [id], onDelete: SetNull)
+  linkedAccounts   Customer[] @relation("CustomerAccountLinks")
+
+  email       String?
+  phone       String?
+  website     String?
+  addressLine String?
+  town        String?
+  postcode    String?
+
+  paymentTerms   String?
+  creditLimit    Float?
+  currentBalance Float?  @default(0)
+
+  discount          Float?
+  accountOnHold     Boolean   @default(false)
+  accountOpenedDate DateTime?
+  firstInvoiceDate  DateTime?
+  lastInvoiceDate   DateTime?
+  emailOrPrint      String?
+
+  assignedMembershipId Int?
+  assignedTo           CompanyMembership? @relation(fields: [assignedMembershipId], references: [id], onDelete: SetNull)
+
+  notes                   String?
+  timelineEntries         CustomerTimelineEntry[]
+  tasks                   CommercialTask[]
+  voiceNotes              CustomerVoiceNote[]
+  commercialCosts         CustomerCommercialCost[]
+  createdAt               DateTime                     @default(now())
+  updatedAt               DateTime                     @updatedAt
+  commercialOpportunities CommercialOpportunity[]
+  quotes                  Quote[]
+  agentHistory            CustomerAgentHistory[]
+  buyingGroupHistory      CustomerBuyingGroupHistory[]
+  aliases                 CustomerAccountAlias[]
+  commercialAgreements    CommercialAgreement[]
+
+  @@unique([companyId, accountCode])
+  @@index([companyId])
+  @@index([assignedMembershipId])
+  @@index([name])
+  @@index([parentCustomerId])
+}
+
+model CustomerCommercialCost {
+  id Int @id @default(autoincrement())
+
+  customerId Int
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  costDate DateTime
+
+  costType String
+
+  description String?
+
+  amount Float
+
+  source          String?
+  sourceReference String?
+  notes           String?
+
+  isAutomatic Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([customerId, costDate])
+  @@index([costType])
+}
+
+model CustomerAccountAlias {
+  id Int @id @default(autoincrement())
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  customerId Int
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  accountCode String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, accountCode])
+  @@index([customerId])
+}
+
+model CustomerAgentHistory {
+  id Int @id @default(autoincrement())
+
+  customerId Int
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  membershipId Int?
+  membership   CompanyMembership? @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+
+  agentName String
+
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([membershipId])
+  @@index([effectiveFrom])
+}
+
+model CustomerBuyingGroupHistory {
+  id Int @id @default(autoincrement())
+
+  customerId Int
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  buyingGroup String
+
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([buyingGroup])
+  @@index([effectiveFrom])
+}
+
+model Quote {
+  id Int @id @default(autoincrement())
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  customerId Int
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  opportunityId Int?
+  opportunity   CommercialOpportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+
+  agentMembershipId Int?
+  agent             CompanyMembership? @relation("QuoteAgent", fields: [agentMembershipId], references: [id], onDelete: SetNull)
+
+  quoterMembershipId Int?
+  quoter             CompanyMembership? @relation("QuoteQuoter", fields: [quoterMembershipId], references: [id], onDelete: SetNull)
+
+  quoteNumber String
+
+  quoteDate  DateTime?
+  expiryDate DateTime?
+
+  merchantName String?
+  branchName   String?
+  buyingGroup  String?
+
+  status String @default("OPEN")
+
+  netValue   Float?
+  vatValue   Float?
+  grossValue Float?
+
+  source String? @default("SAGE")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lines QuoteLine[]
+
+  @@unique([companyId, quoteNumber])
+  @@index([companyId])
+  @@index([customerId])
+  @@index([opportunityId])
+  @@index([status])
+}
+
+model QuoteLine {
+  id Int @id @default(autoincrement())
+
+  quoteId Int
+  quote   Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  productCode String?
+  description String
+
+  quantity  Float?
+  unitPrice Float?
+  lineValue Float?
+
+  createdAt DateTime @default(now())
+
+  @@index([quoteId])
+  @@index([productCode])
+}
+
+model CustomerTimelineEntry {
+  id Int @id @default(autoincrement())
+
+  customerId Int
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  type        String
+  title       String
+  description String?
+
+  value     Float?
+  reference String?
+
+  createdBy  String?
+  occurredAt DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([occurredAt])
+  @@index([type])
+}
+
+model CommercialTask {
+  id Int @id @default(autoincrement())
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  customerId Int
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  assignedMembershipId Int?
+  assignedTo           CompanyMembership? @relation(fields: [assignedMembershipId], references: [id], onDelete: SetNull)
+
+  title       String
+  description String?
+
+  priority String @default("MEDIUM")
+
+  type String
+
+  status String @default("OPEN")
+
+  dueDate DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([customerId])
+  @@index([status])
+}
+
+model CommercialOpportunity {
+  id Int @id @default(autoincrement())
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  customerId Int
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  ownerMembershipId Int?
+  owner             CompanyMembership? @relation(fields: [ownerMembershipId], references: [id], onDelete: SetNull)
+
+  agentMembershipId Int?
+  agent             CompanyMembership? @relation("OpportunityAgent", fields: [agentMembershipId], references: [id], onDelete: SetNull)
+
+  quoterMembershipId Int?
+  quoter             CompanyMembership? @relation("OpportunityQuoter", fields: [quoterMembershipId], references: [id], onDelete: SetNull)
+
+  title       String
+  description String?
+
+  stage  String @default("QUALIFY")
+  status String @default("OPEN")
+
+  value       Float?
+  probability Int?
+
+  expectedCloseDate DateTime?
+  source            String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  quotes Quote[]
+
+  @@index([companyId])
+  @@index([customerId])
+  @@index([status])
+  @@index([stage])
+}
+
+model CustomerVoiceNote {
+  id Int @id @default(autoincrement())
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  customerId Int
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  createdByMembershipId Int?
+  createdBy             CompanyMembership? @relation(fields: [createdByMembershipId], references: [id], onDelete: SetNull)
+
+  audioUrl String
+
+  mimeType        String?
+  durationSeconds Int?
+
+  transcript               String?
+  summary                  String?
+  suggestedTaskTitle       String?
+  suggestedTaskDescription String?
+  suggestedTaskPriority    String?
+  suggestedTaskDueDate     DateTime?
+
+  opportunitySummary String?
+  sentiment          String?
+  taskApprovedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([customerId])
+  @@index([createdAt])
 }
 
 model Role {
@@ -135,8 +523,55 @@ model Product {
   updatedAt DateTime @updatedAt
 
   merchantPrices MerchantPrice[]
+  costHistory    ProductCostHistory[]
+  aliases        ProductAlias[]
 
   @@index([companyId])
+}
+
+model ProductCostHistory {
+  id Int @id @default(autoincrement())
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  productId Int
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  costPrice Float
+
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+
+  source String?
+  notes  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId, productId])
+  @@index([companyId, effectiveFrom])
+}
+
+model ProductAlias {
+  id Int @id @default(autoincrement())
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  productId Int
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  aliasCode String
+
+  source String?
+  notes  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, aliasCode])
+  @@index([companyId, productId])
 }
 
 model MerchantPrice {
@@ -162,6 +597,9 @@ model CommercialAgreement {
 
   companyId Int?
   company   Company? @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  customerId Int?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
   startDate    DateTime?
   endDate      DateTime?
@@ -190,6 +628,8 @@ model CommercialAgreement {
   rebates   RebateScheme[]
 
   @@index([companyId])
+  @@index([customerId])
+  @@index([companyId, buyingGroup])
 }
 
 model AgreementDocument {
@@ -241,4 +681,147 @@ model RebateScheme {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model GoodsDespatchNote {
+  id Int @id @default(autoincrement())
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  gdnNumber        String
+  salesOrderNumber String?
+  gdnDate          DateTime?
+
+  customerAccountCode String?
+  customerName        String?
+
+  deliveryName     String?
+  deliveryAddress1 String?
+  deliveryAddress2 String?
+  deliveryAddress3 String?
+  deliveryTown     String?
+  deliveryCounty   String?
+  deliveryPostcode String?
+
+  status String @default("DESPATCHED")
+
+  importedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  lines GoodsDespatchLine[]
+
+  @@unique([companyId, gdnNumber])
+  @@index([companyId, customerAccountCode])
+  @@index([companyId, salesOrderNumber])
+  @@index([companyId, gdnDate])
+}
+
+model GoodsDespatchLine {
+  id Int @id @default(autoincrement())
+
+  goodsDespatchNoteId Int
+  goodsDespatchNote   GoodsDespatchNote @relation(fields: [goodsDespatchNoteId], references: [id], onDelete: Cascade)
+
+  lineNumber         Int?
+  stockCode          String?
+  partNumber         String?
+  description        String?
+  quantityOrdered    Float?
+  quantityDespatched Float?
+
+  createdAt DateTime @default(now())
+
+  @@index([goodsDespatchNoteId])
+  @@index([stockCode])
+}
+
+model SalesInvoice {
+  id Int @id @default(autoincrement())
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  invoiceNumber       String
+  salesOrderNumber    String?
+  customerOrderNumber String?
+  invoiceType         String?
+  invoiceDate         DateTime?
+
+  customerAccountCode String?
+  customerName        String?
+
+  netValue   Float?
+  vatValue   Float?
+  grossValue Float?
+
+  creditedInvoiceNumber String?
+  creditedInvoiceId     Int?
+
+  creditedInvoice SalesInvoice?  @relation("InvoiceCredits", fields: [creditedInvoiceId], references: [id], onDelete: SetNull)
+  creditNotes     SalesInvoice[] @relation("InvoiceCredits")
+
+  importedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  lines SalesInvoiceLine[]
+
+  @@unique([companyId, invoiceNumber])
+  @@index([companyId, customerAccountCode])
+  @@index([companyId, invoiceDate])
+  @@index([creditedInvoiceId])
+  @@index([companyId, creditedInvoiceNumber])
+}
+
+model SalesOrder {
+  id Int @id @default(autoincrement())
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  salesOrderNumber String
+
+  orderDate DateTime?
+
+  customerAccountCode String?
+  customerName        String?
+
+  orderValue Float?
+
+  status              String?
+  despatched          Boolean   @default(false)
+  invoiced            Boolean   @default(false)
+  investigationStatus String?
+  investigationNote   String?
+  investigatedBy      String?
+  investigatedAt      DateTime?
+
+  importedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([companyId, salesOrderNumber])
+  @@index([companyId, customerAccountCode])
+  @@index([companyId, orderDate])
+}
+
+model SalesInvoiceLine {
+  id Int @id @default(autoincrement())
+
+  salesInvoiceId Int
+  salesInvoice   SalesInvoice @relation(fields: [salesInvoiceId], references: [id], onDelete: Cascade)
+
+  lineNumber  Int?
+  stockCode   String?
+  description String?
+  quantity    Float?
+  netValue    Float?
+  vatValue    Float?
+
+  createdAt DateTime @default(now())
+
+  @@index([salesInvoiceId])
+  @@index([stockCode])
 }

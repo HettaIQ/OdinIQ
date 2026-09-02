@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import DocumentUpload from "./DocumentUpload";
 import DocumentMover from "./DocumentMover";
 import AnalyseAgreementButton from "./AnalyseAgreementButton";
+import AgreementBuyingGroupEditor from "./AgreementBuyingGroupEditor";
 
 export const dynamic = "force-dynamic";
 
@@ -239,6 +240,12 @@ const agreementOptions = await prisma.commercialAgreement.findMany({
               value={agreement.buyingGroup ?? "Not set"}
             />
           </div>
+
+
+<AgreementBuyingGroupEditor
+  agreementId={agreement.id}
+  initialBuyingGroup={agreement.buyingGroup}
+/>
 
           <div style={panelStyle}>
             <h2 style={{ marginTop: 0 }}>Commercial Terms</h2>

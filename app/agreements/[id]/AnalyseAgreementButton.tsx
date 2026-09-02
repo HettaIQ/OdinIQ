@@ -8,11 +8,13 @@ type AnalyseAgreementButtonProps = {
 
 type AnalysisResult = {
   agreementId: number;
-  discount: string;
-  rebate: string;
-  paymentTerms: string;
-  renewalDate: string;
-  noticePeriod: string;
+  documentId?: number;
+  documentName?: string;
+  discount: string | null;
+  rebate: string | null;
+  paymentTerms: string | null;
+  renewalDate: string | null;
+  noticePeriod: string | null;
 };
 
 export default function AnalyseAgreementButton({
@@ -106,6 +108,14 @@ export default function AnalyseAgreementButton({
     }
   }
 
+const analysisComplete = Boolean(
+  analysis?.discount &&
+    analysis?.rebate &&
+    analysis?.paymentTerms &&
+    analysis?.renewalDate &&
+    analysis?.noticePeriod
+);
+
   return (
     <div>
       <button
@@ -162,11 +172,17 @@ export default function AnalyseAgreementButton({
             />
           </div>
 
+          {analysis && !analysisComplete && (
+  <p className="mt-3 text-sm text-yellow-300">
+    Some terms could not be found in the document. Review the agreement before saving.
+  </p>
+)}
+
           <div className="mt-4 flex gap-3">
             <button
               type="button"
               onClick={handleApplyTerms}
-              disabled={saving}
+              disabled={saving || !analysisComplete}
               className="rounded-md bg-yellow-400 px-4 py-2 text-sm font-semibold text-black transition hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {saving ? "Saving..." : "Approve & Save"}
@@ -192,8 +208,11 @@ function ResultCard({
   value,
 }: {
   label: string;
-  value: string;
+  value: string | null;
 }) {
+
+
+
   return (
     <div className="rounded-md border border-zinc-700 bg-zinc-950 p-3">
       <p className="text-xs text-zinc-400">
@@ -201,7 +220,7 @@ function ResultCard({
       </p>
 
       <p className="mt-1 text-sm font-semibold text-white">
-        {value}
+        {value ?? "Not found"}
       </p>
     </div>
   );

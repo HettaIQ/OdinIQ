@@ -9,6 +9,7 @@ type AnalysisResult = {
   message?: string;
   fileName?: string;
   sheetName?: string;
+  sourceType?: string;
   detectedHeaderRow?: number;
   merchantDiscountCount?: number;
   merchantDiscounts?: Array<{
@@ -28,7 +29,10 @@ type SaveResult = {
     received: number;
     created: number;
     updated: number;
+    unchanged?: number;
     skipped: number;
+    costPricesUpdated?: number;
+    zeroOrBlankCostsIgnored?: number;
     totalProducts: number;
   };
   errors?: Array<{
@@ -126,13 +130,57 @@ export default function ProductImportPage() {
     for (const header of possibleHeaders) {
       const value = row[header];
 
-      if (value !== undefined && value !== null && String(value).trim()) {
+      if (
+        value !== undefined &&
+        value !== null &&
+        String(value).trim()
+      ) {
         return String(value);
       }
     }
 
     return "—";
   }
+
+  function displayPrice(
+    row: ImportedProduct,
+    possibleHeaders: string[]
+  ): string {
+    for (const header of possibleHeaders) {
+      const value = row[header];
+
+      if (
+        value === undefined ||
+        value === null ||
+        String(value).trim() === ""
+      ) {
+        continue;
+      }
+
+      const cleaned = String(value)
+        .replace(/£/g, "")
+        .replace(/,/g, "")
+        .trim();
+
+      const number = Number(cleaned);
+
+      if (Number.isFinite(number)) {
+        return `£${number.toFixed(2)}`;
+      }
+
+      return String(value);
+    }
+
+    return "—";
+  }
+
+  const isXero =
+    result?.sourceType === "Xero Inventory" ||
+    result?.headers?.some(
+      (header) =>
+        header.trim().toLowerCase() === "*itemcode" ||
+        header.trim().toLowerCase() === "itemcode"
+    );
 
   return (
     <main
@@ -251,11 +299,13 @@ export default function ProductImportPage() {
             style={{
               marginTop: "22px",
               padding: "13px 24px",
-              background: !file || uploading ? "#695d2b" : "#d4af37",
+              background:
+                !file || uploading ? "#695d2b" : "#d4af37",
               color: "#111111",
               border: "none",
               borderRadius: "8px",
-              cursor: !file || uploading ? "not-allowed" : "pointer",
+              cursor:
+                !file || uploading ? "not-allowed" : "pointer",
               fontWeight: "bold",
               fontSize: "15px",
             }}
@@ -322,7 +372,10 @@ export default function ProductImportPage() {
             >
               <AnalysisCard
                 label="Detected Type"
-                value="Product Price List"
+                value={
+                  result.sourceType ??
+                  (isXero ? "Xero Inventory" : "Product Price List")
+                }
               />
 
               <AnalysisCard
@@ -343,7 +396,9 @@ export default function ProductImportPage() {
 
             {!!result.preview?.length && (
               <div style={{ marginTop: "28px" }}>
-                <h3 style={{ marginBottom: "14px" }}>Product preview</h3>
+                <h3 style={{ marginBottom: "14px" }}>
+                  Product preview
+                </h3>
 
                 <div
                   style={{
@@ -370,10 +425,12 @@ export default function ProductImportPage() {
                     </thead>
 
                     <tbody>
-                      {result.preview.slice(0, 8).map((row, index) => (
+                      {result.preview.slice(0, 10).map((row, index) => (
                         <tr key={index}>
                           <td style={tableCellStyle}>
                             {displayValue(row, [
+                              "*ItemCode",
+                              "ItemCode",
                               "Product Code",
                               "Product code",
                               "productCode",
@@ -383,18 +440,25 @@ export default function ProductImportPage() {
 
                           <td style={tableCellStyle}>
                             {displayValue(row, [
+                              "ItemName",
                               "Description",
                               "description",
                               "Product Description",
+                              "SalesDescription",
+                              "PurchasesDescription",
                             ])}
                           </td>
 
                           <td style={tableCellStyle}>
-                            {displayValue(row, ["Supplier", "supplier"])}
+                            {displayValue(row, [
+                              "Supplier",
+                              "supplier",
+                            ])}
                           </td>
 
                           <td style={tableCellStyle}>
-                            {displayValue(row, [
+                            {displayPrice(row, [
+                              "PurchasesUnitPrice",
                               "Cost to us",
                               "Cost Price",
                               "costPrice",
@@ -402,7 +466,8 @@ export default function ProductImportPage() {
                           </td>
 
                           <td style={tableCellStyle}>
-                            {displayValue(row, [
+                            {displayPrice(row, [
+                              "SalesUnitPrice",
                               "New August Price",
                               "New Price",
                               "List Price",
@@ -431,9 +496,9 @@ export default function ProductImportPage() {
               </h3>
 
               <p style={{ marginBottom: 0, lineHeight: 1.6 }}>
-                This appears to be a product price list. Continue to create
-                new products and update any existing products that use the
-                same product code.
+                {isXero
+                  ? "This appears to be a Xero inventory export. OdinIQ will match products by item code, update valid prices and create products that do not already exist. Blank or zero cost prices will not overwrite valid existing costs."
+                  : "This appears to be a product price list. Continue to create new products and update any existing products that use the same product code."}
               </p>
             </div>
 
@@ -491,18 +556,39 @@ export default function ProductImportPage() {
                       label="Received"
                       value={saveResult.summary.received}
                     />
+
                     <SummaryItem
                       label="Created"
                       value={saveResult.summary.created}
                     />
+
                     <SummaryItem
                       label="Updated"
                       value={saveResult.summary.updated}
                     />
+
+                    <SummaryItem
+                      label="Unchanged"
+                      value={saveResult.summary.unchanged ?? 0}
+                    />
+
+                    <SummaryItem
+                      label="Costs Updated"
+                      value={saveResult.summary.costPricesUpdated ?? 0}
+                    />
+
+                    <SummaryItem
+                      label="Blank/Zero Costs Ignored"
+                      value={
+                        saveResult.summary.zeroOrBlankCostsIgnored ?? 0
+                      }
+                    />
+
                     <SummaryItem
                       label="Skipped"
                       value={saveResult.summary.skipped}
                     />
+
                     <SummaryItem
                       label="Total Products"
                       value={saveResult.summary.totalProducts}
@@ -555,7 +641,15 @@ function SummaryItem({
         borderRadius: "8px",
       }}
     >
-      <div style={{ color: "#999999", fontSize: "12px" }}>{label}</div>
+      <div
+        style={{
+          color: "#999999",
+          fontSize: "12px",
+        }}
+      >
+        {label}
+      </div>
+
       <div
         style={{
           color: "#ffffff",

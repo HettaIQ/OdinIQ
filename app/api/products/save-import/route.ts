@@ -26,7 +26,10 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const products = Array.isArray(body.products) ? body.products : [];
+
+    const products = Array.isArray(body.products)
+      ? body.products
+      : [];
 
     if (products.length === 0) {
       return NextResponse.json(
@@ -42,8 +45,13 @@ export async function POST(request: Request) {
       return String(value ?? "").trim();
     }
 
-    function parsePrice(value: unknown): number | null {
-      if (typeof value === "number" && Number.isFinite(value)) {
+    function parsePrice(
+      value: unknown
+    ): number | null {
+      if (
+        typeof value === "number" &&
+        Number.isFinite(value)
+      ) {
         return value;
       }
 
@@ -58,12 +66,47 @@ export async function POST(request: Request) {
 
       const parsed = Number(cleaned);
 
-      return Number.isFinite(parsed) ? parsed : null;
+      return Number.isFinite(parsed)
+        ? parsed
+        : null;
+    }
+
+    function parseActive(
+      value: unknown
+    ): boolean | null {
+      const cleaned = cleanText(value)
+        .toUpperCase();
+
+      if (!cleaned) {
+        return null;
+      }
+
+      if (
+        cleaned === "ACTIVE" ||
+        cleaned === "YES" ||
+        cleaned === "TRUE"
+      ) {
+        return true;
+      }
+
+      if (
+        cleaned === "INACTIVE" ||
+        cleaned === "NO" ||
+        cleaned === "FALSE"
+      ) {
+        return false;
+      }
+
+      return null;
     }
 
     let created = 0;
     let updated = 0;
+    let unchanged = 0;
     let skipped = 0;
+
+    let costPricesUpdated = 0;
+    let zeroOrBlankCostsIgnored = 0;
 
     const errors: Array<{
       row: number;
@@ -71,20 +114,32 @@ export async function POST(request: Request) {
       reason: string;
     }> = [];
 
-    for (let index = 0; index < products.length; index += 1) {
-      const row = products[index] as Record<string, unknown>;
+    for (
+      let index = 0;
+      index < products.length;
+      index += 1
+    ) {
+      const row =
+        products[index] as Record<
+          string,
+          unknown
+        >;
 
       const productCode = cleanText(
-        row["Product Code"] ??
+        row["*ItemCode"] ??
+          row["Product Code"] ??
           row.productCode ??
           row["Product code"] ??
           row.Code
       );
 
       const description = cleanText(
-        row.Description ??
+        row.ItemName ??
+          row.Description ??
           row.description ??
-          row["Product Description"]
+          row["Product Description"] ??
+          row.SalesDescription ??
+          row.PurchasesDescription
       );
 
       const supplier = cleanText(
@@ -92,63 +147,209 @@ export async function POST(request: Request) {
           row.supplier
       );
 
-      const costPrice = parsePrice(
-        row["Cost to us"] ??
-          row["Cost Price"] ??
-          row.costPrice
-      );
+      const incomingCostPrice =
+        parsePrice(
+          row.PurchasesUnitPrice ??
+            row["Cost to us"] ??
+            row["Cost Price"] ??
+            row.costPrice
+        );
 
-      const listPrice = parsePrice(
-        row["New August Price"] ??
-          row["New Price"] ??
-          row["List Price"] ??
-          row.listPrice
-      );
+      const incomingListPrice =
+        parsePrice(
+          row.SalesUnitPrice ??
+            row["New August Price"] ??
+            row["New Price"] ??
+            row["List Price"] ??
+            row.listPrice
+        );
 
-      if (!productCode || !description) {
+      const incomingActive =
+        parseActive(
+          row.Status ??
+            row.status
+        );
+
+      if (!productCode) {
         skipped += 1;
 
         errors.push({
           row: index + 1,
-          productCode: productCode || undefined,
-          reason: "Missing product code or description.",
+          reason: "Missing product code.",
         });
 
         continue;
       }
 
       try {
-        const existingProduct = await prisma.product.findUnique({
-          where: {
-            productCode,
-          },
-          select: {
-            id: true,
-          },
-        });
+        const existingProduct =
+          await prisma.product.findUnique({
+            where: {
+              productCode,
+            },
 
-        await prisma.product.upsert({
-          where: {
-            productCode,
-          },
-          update: {
-            description,
-            supplier: supplier || null,
-            costPrice,
-            listPrice,
-          },
-          create: {
-            productCode,
-            description,
-            supplier: supplier || null,
-            costPrice,
-            listPrice,
-          },
-        });
+            select: {
+              id: true,
+              description: true,
+              supplier: true,
+              costPrice: true,
+              listPrice: true,
+              active: true,
+            },
+          });
 
         if (existingProduct) {
-          updated += 1;
+          const updateData: {
+            description?: string;
+            supplier?: string | null;
+            costPrice?: number;
+            listPrice?: number;
+            active?: boolean;
+          } = {};
+
+          if (
+            description &&
+            description !==
+              existingProduct.description
+          ) {
+            updateData.description =
+              description;
+          }
+
+          if (
+            supplier &&
+            supplier !==
+              existingProduct.supplier
+          ) {
+            updateData.supplier =
+              supplier;
+          }
+
+          /*
+           * Cost safety rule:
+           *
+           * Only a genuine positive incoming
+           * cost is allowed to update OdinIQ.
+           *
+           * Blank, null or £0.00 values are
+           * ignored so they cannot wipe or
+           * replace a real product cost.
+           */
+          if (
+            incomingCostPrice !== null &&
+            incomingCostPrice > 0
+          ) {
+            if (
+              existingProduct.costPrice !==
+              incomingCostPrice
+            ) {
+              updateData.costPrice =
+                incomingCostPrice;
+
+              costPricesUpdated += 1;
+            }
+          } else {
+            zeroOrBlankCostsIgnored += 1;
+          }
+
+          /*
+           * Same safety principle for sales/list
+           * prices: only positive values update.
+           */
+          if (
+            incomingListPrice !== null &&
+            incomingListPrice > 0 &&
+            existingProduct.listPrice !==
+              incomingListPrice
+          ) {
+            updateData.listPrice =
+              incomingListPrice;
+          }
+
+          if (
+            incomingActive !== null &&
+            existingProduct.active !==
+              incomingActive
+          ) {
+            updateData.active =
+              incomingActive;
+          }
+
+          if (
+            Object.keys(updateData).length >
+            0
+          ) {
+            await prisma.product.update({
+              where: {
+                id: existingProduct.id,
+              },
+
+              data: updateData,
+            });
+
+            updated += 1;
+          } else {
+            unchanged += 1;
+          }
         } else {
+          /*
+           * New product:
+           *
+           * We require a description, but a
+           * product can still be created without
+           * a cost. That allows OdinIQ to flag it
+           * honestly as "missing cost" rather than
+           * inventing £0.00 as its true cost.
+           */
+          if (!description) {
+            skipped += 1;
+
+            errors.push({
+              row: index + 1,
+              productCode,
+              reason:
+                "New product has no description.",
+            });
+
+            continue;
+          }
+
+          await prisma.product.create({
+            data: {
+              productCode,
+              description,
+
+              supplier:
+                supplier || null,
+
+              costPrice:
+                incomingCostPrice !==
+                  null &&
+                incomingCostPrice > 0
+                  ? incomingCostPrice
+                  : null,
+
+              listPrice:
+                incomingListPrice !==
+                  null &&
+                incomingListPrice > 0
+                  ? incomingListPrice
+                  : null,
+
+              active:
+                incomingActive ?? true,
+            },
+          });
+
+          if (
+            incomingCostPrice !== null &&
+            incomingCostPrice > 0
+          ) {
+            costPricesUpdated += 1;
+          } else {
+            zeroOrBlankCostsIgnored += 1;
+          }
+
           created += 1;
         }
       } catch (error) {
@@ -157,6 +358,7 @@ export async function POST(request: Request) {
         errors.push({
           row: index + 1,
           productCode,
+
           reason:
             error instanceof Error
               ? error.message
@@ -165,27 +367,44 @@ export async function POST(request: Request) {
       }
     }
 
-    const totalProducts = await prisma.product.count();
+    const totalProducts =
+      await prisma.product.count();
 
     return NextResponse.json({
       success: true,
-      message: `Import complete: ${created} created, ${updated} updated and ${skipped} skipped.`,
+
+      message:
+        `Import complete: ` +
+        `${created} created, ` +
+        `${updated} updated, ` +
+        `${unchanged} unchanged and ` +
+        `${skipped} skipped.`,
+
       summary: {
         received: products.length,
         created,
         updated,
+        unchanged,
         skipped,
+        costPricesUpdated,
+        zeroOrBlankCostsIgnored,
         totalProducts,
       },
+
       errors: errors.slice(0, 20),
     });
   } catch (error) {
-    console.error("Product import failed:", error);
+    console.error(
+      "Product import failed:",
+      error
+    );
 
     return NextResponse.json(
       {
         success: false,
-        message: "The product import could not be completed.",
+        message:
+          "The product import could not be completed.",
+
         error:
           error instanceof Error
             ? error.message
