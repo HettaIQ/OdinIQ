@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { DragEvent, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 
 type PreviewRow = {
@@ -18,6 +18,9 @@ export default function SalesOrderImportUploader() {
   const [error, setError] = useState("");
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState("");
+  const [isDragging, setIsDragging] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   function normalise(value: unknown) {
     return String(value ?? "")
@@ -26,11 +29,28 @@ export default function SalesOrderImportUploader() {
       .toLowerCase();
   }
 
+  function isSupportedFile(file: File) {
+    const name = file.name.toLowerCase();
+
+    return (
+      name.endsWith(".xlsx") ||
+      name.endsWith(".xls") ||
+      name.endsWith(".csv")
+    );
+  }
+
   async function handleFile(file: File) {
     setError("");
     setImportMessage("");
     setFileName("");
     setRows([]);
+
+    if (!isSupportedFile(file)) {
+      setError(
+        "Please select a Sage Excel or CSV file (.xlsx, .xls or .csv)."
+      );
+      return;
+    }
 
     try {
       const buffer = await file.arrayBuffer();
@@ -49,20 +69,38 @@ export default function SalesOrderImportUploader() {
 
       const worksheet = workbook.Sheets[firstSheetName];
 
-      const rawRows = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
-        header: 1,
-        defval: "",
-        raw: false,
-      });
+      const rawRows = XLSX.utils.sheet_to_json<unknown[]>(
+        worksheet,
+        {
+          header: 1,
+          defval: "",
+          raw: false,
+        }
+      );
 
       const headerRowIndex = rawRows.findIndex(
-  (row) =>
-    row.some((value) => normalise(value) === "no.") &&
-    row.some((value) => normalise(value) === "type") &&
-    row.some((value) => normalise(value) === "date") &&
-    row.some((value) => normalise(value) === "name") &&
-    row.some((value) => normalise(value) === "amount £")
-);
+        (row) =>
+          row.some(
+            (value) =>
+              normalise(value) === "no."
+          ) &&
+          row.some(
+            (value) =>
+              normalise(value) === "type"
+          ) &&
+          row.some(
+            (value) =>
+              normalise(value) === "date"
+          ) &&
+          row.some(
+            (value) =>
+              normalise(value) === "name"
+          ) &&
+          row.some(
+            (value) =>
+              normalise(value) === "amount £"
+          )
+      );
 
       if (headerRowIndex === -1) {
         setError(
@@ -75,48 +113,60 @@ export default function SalesOrderImportUploader() {
 
       const findColumn = (labels: string[]) => {
         return headerRow.findIndex((value) =>
-          labels.some((label) => normalise(value) === normalise(label))
+          labels.some(
+            (label) =>
+              normalise(value) ===
+              normalise(label)
+          )
         );
       };
 
-      const salesOrderNumberIndex = findColumn([
-        "order no",
-        "order number",
-        "sales order no",
-        "sales order number",
-        "no.",
-        "no",
-      ]);
+      const salesOrderNumberIndex =
+        findColumn([
+          "order no",
+          "order number",
+          "sales order no",
+          "sales order number",
+          "no.",
+          "no",
+        ]);
 
       const orderDateIndex = findColumn([
         "date",
         "order date",
       ]);
 
-      const customerAccountCodeIndex = findColumn([
-        "account ref",
-        "account reference",
-        "customer account",
-        "account code",
-      ]);
+      const customerAccountCodeIndex =
+        findColumn([
+          "account ref",
+          "account reference",
+          "customer account",
+          "account code",
+        ]);
 
-      const customerNameIndex = findColumn([
-        "name",
-        "customer name",
-      ]);
+      const customerNameIndex =
+        findColumn([
+          "name",
+          "customer name",
+        ]);
 
-      const orderValueIndex = findColumn([
-        "amount £",
-        "amount",
-        "order value",
-        "net value",
-        "total",
-      ]);
+      const orderValueIndex =
+        findColumn([
+          "amount £",
+          "amount",
+          "order value",
+          "net value",
+          "total",
+        ]);
 
       const statusIndex = findColumn([
         "status",
         "order status",
         "complete",
+      ]);
+
+      const typeIndex = findColumn([
+        "type",
       ]);
 
       if (salesOrderNumberIndex === -1) {
@@ -127,66 +177,172 @@ export default function SalesOrderImportUploader() {
       }
 
       const parsedRows: PreviewRow[] = [];
-      const typeIndex = findColumn(["type"]);
 
       for (
-        let rowIndex = headerRowIndex + 1;
+        let rowIndex =
+          headerRowIndex + 1;
         rowIndex < rawRows.length;
         rowIndex++
       ) {
         const row = rawRows[rowIndex];
 
-        const salesOrderNumber = String(
-          row[salesOrderNumberIndex] ?? ""
-        ).trim();
+        const salesOrderNumber =
+          String(
+            row[
+              salesOrderNumberIndex
+            ] ?? ""
+          ).trim();
 
         if (!salesOrderNumber) {
           continue;
         }
-const recordType =
-  typeIndex >= 0
-    ? String(row[typeIndex] ?? "").trim()
-    : "";
 
-if (recordType.toUpperCase() !== "ORD") {
-  continue;
-}
+        const recordType =
+          typeIndex >= 0
+            ? String(
+                row[typeIndex] ?? ""
+              ).trim()
+            : "";
+
+        if (
+          recordType.toUpperCase() !==
+          "ORD"
+        ) {
+          continue;
+        }
+
         parsedRows.push({
           salesOrderNumber,
+
           orderDate:
             orderDateIndex >= 0
-              ? String(row[orderDateIndex] ?? "").trim()
+              ? String(
+                  row[
+                    orderDateIndex
+                  ] ?? ""
+                ).trim()
               : "",
+
           customerAccountCode:
-            customerAccountCodeIndex >= 0
-              ? String(row[customerAccountCodeIndex] ?? "").trim()
+            customerAccountCodeIndex >=
+            0
+              ? String(
+                  row[
+                    customerAccountCodeIndex
+                  ] ?? ""
+                ).trim()
               : "",
+
           customerName:
             customerNameIndex >= 0
-              ? String(row[customerNameIndex] ?? "").trim()
+              ? String(
+                  row[
+                    customerNameIndex
+                  ] ?? ""
+                ).trim()
               : "",
+
           orderValue:
-  orderValueIndex >= 0
-    ? String(row[orderValueIndex] ?? "").trim()
-    : "",
+            orderValueIndex >= 0
+              ? String(
+                  row[
+                    orderValueIndex
+                  ] ?? ""
+                ).trim()
+              : "",
+
           status:
             statusIndex >= 0
-              ? String(row[statusIndex] ?? "").trim()
+              ? String(
+                  row[
+                    statusIndex
+                  ] ?? ""
+                ).trim()
               : "",
         });
       }
 
       if (parsedRows.length === 0) {
-        setError("The file does not contain any Sales Orders.");
+        setError(
+          "The file does not contain any Sales Orders."
+        );
         return;
       }
 
       setFileName(file.name);
       setRows(parsedRows);
     } catch (err) {
-      console.error("Sales Order file read failed:", err);
-      setError("OdinIQ could not read this Sales Order file.");
+      console.error(
+        "Sales Order file read failed:",
+        err
+      );
+
+      setError(
+        "OdinIQ could not read this Sales Order file."
+      );
     }
+  }
+
+  function handleDragEnter(
+    event: DragEvent<HTMLDivElement>
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    setIsDragging(true);
+  }
+
+  function handleDragOver(
+    event: DragEvent<HTMLDivElement>
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    event.dataTransfer.dropEffect =
+      "copy";
+
+    setIsDragging(true);
+  }
+
+  function handleDragLeave(
+    event: DragEvent<HTMLDivElement>
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (
+      event.currentTarget.contains(
+        event.relatedTarget as Node
+      )
+    ) {
+      return;
+    }
+
+    setIsDragging(false);
+  }
+
+  function handleDrop(
+    event: DragEvent<HTMLDivElement>
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    setIsDragging(false);
+
+    const file =
+      event.dataTransfer.files?.[0];
+
+    if (file) {
+      void handleFile(file);
+    }
+  }
+
+  function openFilePicker() {
+    if (importing) {
+      return;
+    }
+
+    fileInputRef.current?.click();
   }
 
   async function importSalesOrders() {
@@ -197,44 +353,74 @@ if (recordType.toUpperCase() !== "ORD") {
     setImporting(true);
     setImportMessage("");
     setError("");
-const importBatchAt = new Date().toISOString();
+
+    const importBatchAt =
+      new Date().toISOString();
+
     try {
-     let imported = 0;
+      let imported = 0;
 
-const batchSize = 500;
+      const batchSize = 500;
 
-for (let index = 0; index < rows.length; index += batchSize) {
-  const batch = rows.slice(index, index + batchSize);
+      for (
+        let index = 0;
+        index < rows.length;
+        index += batchSize
+      ) {
+        const batch = rows.slice(
+          index,
+          index + batchSize
+        );
 
-  const response = await fetch("/api/sales-order-import", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      rows: batch,
-      importBatchAt,
-    }),
-  });
+        const response = await fetch(
+          "/api/sales-order-import",
+          {
+            method: "POST",
 
-  const result = await response.json();
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
 
-  if (!response.ok) {
-    throw new Error(
-      result.error ||
-        `Sales Order batch import failed at row ${index + 1}.`
-    );
-  }
+            body: JSON.stringify({
+              rows: batch,
+              importBatchAt,
+            }),
+          }
+        );
 
-  imported += Number(result.imported ?? batch.length);
+        const result =
+          await response.json();
 
-  setImportMessage(
-    `Imported ${imported.toLocaleString("en-GB")} of ${rows.length.toLocaleString("en-GB")} Sales Orders...`
-  );
-}
+        if (!response.ok) {
+          throw new Error(
+            result.error ||
+              `Sales Order batch import failed at row ${
+                index + 1
+              }.`
+          );
+        }
+
+        imported += Number(
+          result.imported ??
+            batch.length
+        );
+
+        setImportMessage(
+          `Imported ${imported.toLocaleString(
+            "en-GB"
+          )} of ${rows.length.toLocaleString(
+            "en-GB"
+          )} Sales Orders...`
+        );
+      }
 
       setImportMessage(
-        `${imported} Sales Order${imported === 1 ? "" : "s"} imported successfully.`
+        `${imported.toLocaleString(
+          "en-GB"
+        )} Sales Order${
+          imported === 1 ? "" : "s"
+        } imported successfully.`
       );
     } catch (err) {
       setError(
@@ -249,27 +435,61 @@ for (let index = 0; index < rows.length; index += batchSize) {
 
   return (
     <div>
-      <div className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 p-8 text-center">
+      <div
+        onDragEnter={
+          handleDragEnter
+        }
+        onDragOver={handleDragOver}
+        onDragLeave={
+          handleDragLeave
+        }
+        onDrop={handleDrop}
+        className={`rounded-xl border-2 border-dashed p-8 text-center transition ${
+          isDragging
+            ? "border-amber-500 bg-amber-50"
+            : "border-slate-300 bg-slate-50"
+        }`}
+      >
         <p className="font-semibold text-slate-900">
           Sage Sales Order export
         </p>
 
         <p className="mt-2 text-sm text-slate-500">
-          Select the Sales Order report exported from Sage to Excel.
+          Drag and drop the Sage Sales
+          Order Excel file here, or choose
+          it manually.
         </p>
 
         <input
+          ref={fileInputRef}
           type="file"
           accept=".csv,.xlsx,.xls"
-          className="mt-5 text-sm text-slate-600"
+          className="hidden"
           onChange={(event) => {
-            const file = event.target.files?.[0];
+            const file =
+              event.target.files?.[0];
 
             if (file) {
-              handleFile(file);
+              void handleFile(file);
             }
+
+            event.currentTarget.value =
+              "";
           }}
         />
+
+        <button
+          type="button"
+          onClick={openFilePicker}
+          disabled={importing}
+          className="mt-5 rounded-lg bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Choose Excel File
+        </button>
+
+        <p className="mt-3 text-xs text-slate-400">
+          .xlsx, .xls or .csv
+        </p>
 
         {fileName && (
           <p className="mt-4 text-sm font-semibold text-slate-700">
@@ -295,7 +515,11 @@ for (let index = 0; index < rows.length; index += batchSize) {
           </h3>
 
           <p className="mt-1 text-sm text-slate-500">
-            {rows.length} Sales Orders detected. Nothing has been imported yet.
+            {rows.length.toLocaleString(
+              "en-GB"
+            )}{" "}
+            Sales Orders detected.
+            Nothing has been imported yet.
           </p>
 
           <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200">
@@ -305,18 +529,23 @@ for (let index = 0; index < rows.length; index += batchSize) {
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Sales Order
                   </th>
+
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Date
                   </th>
+
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Account
                   </th>
+
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Customer
                   </th>
+
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Value
                   </th>
+
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Status
                   </th>
@@ -325,24 +554,42 @@ for (let index = 0; index < rows.length; index += batchSize) {
 
               <tbody className="divide-y divide-slate-100 bg-white">
                 {rows.map((row) => (
-                  <tr key={row.salesOrderNumber}>
+                  <tr
+                    key={
+                      row.salesOrderNumber
+                    }
+                  >
                     <td className="whitespace-nowrap px-4 py-3 text-slate-700">
-                      {row.salesOrderNumber}
+                      {
+                        row.salesOrderNumber
+                      }
                     </td>
+
                     <td className="whitespace-nowrap px-4 py-3 text-slate-700">
-                      {row.orderDate || "-"}
+                      {row.orderDate ||
+                        "-"}
                     </td>
+
                     <td className="whitespace-nowrap px-4 py-3 text-slate-700">
-                      {row.customerAccountCode || "-"}
+                      {row.customerAccountCode ||
+                        "-"}
                     </td>
+
                     <td className="whitespace-nowrap px-4 py-3 text-slate-700">
-                      {row.customerName || "-"}
+                      {row.customerName ||
+                        "-"}
                     </td>
+
                     <td className="whitespace-nowrap px-4 py-3 text-slate-700">
-                      {String(row.orderValue || "-")}
+                      {String(
+                        row.orderValue ||
+                          "-"
+                      )}
                     </td>
+
                     <td className="whitespace-nowrap px-4 py-3 text-slate-700">
-                      {row.status || "-"}
+                      {row.status ||
+                        "-"}
                     </td>
                   </tr>
                 ))}
@@ -353,11 +600,18 @@ for (let index = 0; index < rows.length; index += batchSize) {
           <div className="mt-6">
             <button
               type="button"
-              onClick={importSalesOrders}
-              disabled={importing || rows.length === 0}
+              onClick={
+                importSalesOrders
+              }
+              disabled={
+                importing ||
+                rows.length === 0
+              }
               className="rounded-lg bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {importing ? "Importing..." : "Import Sales Orders"}
+              {importing
+                ? "Importing..."
+                : "Import Sales Orders"}
             </button>
 
             {importMessage && (
@@ -365,8 +619,6 @@ for (let index = 0; index < rows.length; index += batchSize) {
                 {importMessage}
               </div>
             )}
-
-            
           </div>
         </div>
       )}

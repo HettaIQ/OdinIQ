@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 
 import { requireAuth } from "@/lib/auth/requireAuth";
 import { prisma } from "@/lib/prisma";
@@ -64,8 +65,8 @@ function parseSageDate(value: unknown) {
     return null;
   }
 
-  const first = Number(match[1]);
-  const second = Number(match[2]);
+  const month = Number(match[1]);
+  const day = Number(match[2]);
 
   let year = Number(match[3]);
 
@@ -73,24 +74,24 @@ function parseSageDate(value: unknown) {
     year += 2000;
   }
 
-  let day: number;
-  let month: number;
-
-  if (first > 12) {
-    day = first;
-    month = second;
-  } else if (second > 12) {
-    month = first;
-    day = second;
-  } else {
-    day = first;
-    month = second;
+  if (
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31
+  ) {
+    return null;
   }
 
   return new Date(
-    Date.UTC(year, month - 1, day)
+    Date.UTC(
+      year,
+      month - 1,
+      day
+    )
   );
 }
+
 
 function firstText(
   rows: InvoiceImportRow[],
@@ -270,7 +271,7 @@ export async function POST(
     }
 
     let importedInvoices = 0;
-    let importedCreditLines = 0;
+    let importedInvoiceLines = 0;
     let linkedCredits = 0;
 
     for (
@@ -687,27 +688,18 @@ export async function POST(
       );
 
       /*
-       * Only credit notes receive detailed
-       * SalesInvoiceLine records here.
-       *
-       * Normal invoice COGS continues to use
-       * the established:
-       *
-       * Invoice -> Sales Order -> GDN
-       *
-       * relationship.
-       */
-    /*
- * Only replace credit-note lines when this
- * import actually contains detailed line data.
+ * Store detailed product lines for BOTH
+ * invoices and credit notes whenever the
+ * imported Sage report actually contains
+ * line-level information.
  *
- * A summary import may contain the credit
- * header but no stock-code/quantity detail.
- * In that situation preserve the detailed
- * credit lines already stored.
+ * IMPORTANT:
+ * A later summary import may contain only
+ * invoice header information. In that case
+ * we preserve any detailed product lines
+ * already stored in OdinIQ.
  */
-const hasDetailedCreditLines =
-  isCredit &&
+const hasDetailedLines =
   invoiceRows.some((row) => {
     const stockCode = String(
       row.stockCode ?? ""
@@ -728,15 +720,12 @@ const hasDetailedCreditLines =
     );
   });
 
-if (hasDetailedCreditLines) {
-  await prisma.salesInvoiceLine.deleteMany(
-    {
-      where: {
-        salesInvoiceId:
-          savedInvoice.id,
-      },
-    }
-  );
+if (hasDetailedLines) {
+  await prisma.salesInvoiceLine.deleteMany({
+    where: {
+      salesInvoiceId: savedInvoice.id,
+    },
+  });
 
   for (const row of invoiceRows) {
     const stockCode = String(
@@ -747,6 +736,12 @@ if (hasDetailedCreditLines) {
       row.description ?? ""
     ).trim();
 
+    /*
+     * Ignore completely empty rows, but retain
+     * genuine Sage memo/reference lines such
+     * as M because they can contain useful
+     * credit-against-invoice information.
+     */
     if (
       !stockCode &&
       !description
@@ -754,49 +749,46 @@ if (hasDetailedCreditLines) {
       continue;
     }
 
-    await prisma.salesInvoiceLine.create(
-      {
-        data: {
-          salesInvoiceId:
-            savedInvoice.id,
+    await prisma.salesInvoiceLine.create({
+      data: {
+        salesInvoiceId: savedInvoice.id,
 
-          stockCode:
-            stockCode || null,
+        stockCode:
+          stockCode || null,
 
-          description:
-            description || null,
+        description:
+          description || null,
 
-          quantity:
-            toNumber(
-              row.quantity
-            ),
+        quantity:
+          toNumber(row.quantity),
 
-          netValue:
-            toNumber(
-              row.netAmount
-            ),
+        netValue:
+          toNumber(row.netAmount),
 
-          vatValue:
-            toNumber(
-              row.taxAmount
-            ),
-        },
-      }
-    );
+        vatValue:
+          toNumber(row.taxAmount),
+      },
+    });
 
-    importedCreditLines++;
+    importedInvoiceLines++;
   }
 }
 
 importedInvoices++;
 }
-
+/*
+ * Refresh OdinIQ pages after new Sage invoice data
+ * has been written so users immediately see the
+ * latest commercial figures.
+ */
+revalidatePath("/commercial/customers", "layout");
+revalidatePath("/products", "layout");
 return NextResponse.json({
   success: true,
   invoiceCount:
     importedInvoices,
-  creditLineCount:
-    importedCreditLines,
+  invoiceLineCount:
+  importedInvoiceLines,
   linkedCreditCount:
     linkedCredits,
 });

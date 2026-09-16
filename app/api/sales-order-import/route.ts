@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 
 import { requireAuth } from "@/lib/auth/requireAuth";
+
 import { prisma } from "@/lib/prisma";
 
 type SalesOrderImportRow = {
@@ -19,13 +21,25 @@ type SalesOrderBatchBody = {
 };
 
 function toNumber(value: unknown) {
-  if (value === null || value === undefined || value === "") {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
     return null;
   }
 
   const parsed = Number(value);
 
-  return Number.isFinite(parsed) ? parsed : null;
+  return Number.isFinite(parsed)
+    ? parsed
+    : null;
+}
+
+function textOrNull(value: unknown) {
+  const text = String(value ?? "").trim();
+
+  return text || null;
 }
 
 function parseSageDate(value: unknown) {
@@ -43,8 +57,8 @@ function parseSageDate(value: unknown) {
     return null;
   }
 
-  const day = Number(match[1]);
-  const month = Number(match[2]);
+  const first = Number(match[1]);
+  const second = Number(match[2]);
 
   let year = Number(match[3]);
 
@@ -52,28 +66,53 @@ function parseSageDate(value: unknown) {
     year += 2000;
   }
 
+  let day: number;
+  let month: number;
+
+  /*
+   * Prefer unambiguous dates.
+   * Ambiguous dates default to UK DD/MM/YYYY
+   * for Sales Order imports.
+   */
+  if (first > 12) {
+    day = first;
+    month = second;
+  } else if (second > 12) {
+    month = first;
+    day = second;
+  } else {
+    day = first;
+    month = second;
+  }
+
   return new Date(
     Date.UTC(year, month - 1, day)
   );
 }
 
-export async function POST(request: Request) {
+export async function POST(
+  request: Request
+) {
   try {
     const user = await requireAuth();
-    const membership = user.memberships[0];
+    const membership =
+      user.memberships[0];
 
     if (!membership) {
       return NextResponse.json(
         {
-          error: "No active company membership found.",
+          error:
+            "No active company membership found.",
         },
         { status: 403 }
       );
     }
 
     const canImport =
-      membership.role?.name === "Company Admin" ||
-      membership.role?.name === "Accounts";
+      membership.role?.name ===
+        "Company Admin" ||
+      membership.role?.name ===
+        "Accounts";
 
     if (!canImport) {
       return NextResponse.json(
@@ -85,22 +124,27 @@ export async function POST(request: Request) {
       );
     }
 
-    const body = (await request.json()) as
-      | SalesOrderImportRow
-      | SalesOrderBatchBody;
+    const body =
+      (await request.json()) as
+        | SalesOrderImportRow
+        | SalesOrderBatchBody;
 
     const isBatch =
-      "rows" in body && Array.isArray(body.rows);
+      "rows" in body &&
+      Array.isArray(body.rows);
 
     const rows: SalesOrderImportRow[] =
       isBatch
         ? body.rows ?? []
-        : [body as SalesOrderImportRow];
+        : [
+            body as SalesOrderImportRow,
+          ];
 
     if (rows.length === 0) {
       return NextResponse.json(
         {
-          error: "No Sales Orders were supplied.",
+          error:
+            "No Sales Orders were supplied.",
         },
         { status: 400 }
       );
@@ -111,83 +155,158 @@ export async function POST(request: Request) {
         ? body.importBatchAt
         : undefined;
 
-    const importBatchAt = batchDateValue
-      ? new Date(batchDateValue)
-      : new Date();
+    const importBatchAt =
+      batchDateValue
+        ? new Date(batchDateValue)
+        : new Date();
 
     let imported = 0;
     let skipped = 0;
 
-    await prisma.$transaction(async (tx) => {
-      for (const row of rows) {
-        const salesOrderNumber = String(
-          row.salesOrderNumber ?? ""
-        ).trim();
+    await prisma.$transaction(
+      async (tx) => {
+        for (const row of rows) {
+          const salesOrderNumber =
+            String(
+              row.salesOrderNumber ?? ""
+            ).trim();
 
-        if (!salesOrderNumber) {
-          skipped++;
-          continue;
-        }
+          if (!salesOrderNumber) {
+            skipped++;
+            continue;
+          }
 
-        const customerAccountCode =
-          String(
-            row.customerAccountCode ?? ""
-          ).trim() || null;
+          const existingSalesOrder =
+            await tx.salesOrder.findUnique({
+              where: {
+                companyId_salesOrderNumber: {
+                  companyId:
+                    membership.companyId,
+                  salesOrderNumber,
+                },
+              },
+              select: {
+                id: true,
+                orderDate: true,
+                customerAccountCode: true,
+                customerName: true,
+                orderValue: true,
+                status: true,
+              },
+            });
 
-        const customerName =
-          String(row.customerName ?? "").trim() ||
-          null;
+          const importedCustomerAccountCode =
+            textOrNull(
+              row.customerAccountCode
+            );
 
-        const orderDate = parseSageDate(
-          row.orderDate
-        );
+          const importedCustomerName =
+            textOrNull(
+              row.customerName
+            );
 
-        const orderValue = toNumber(
-          row.orderValue
-        );
+          const importedOrderDate =
+            parseSageDate(
+              row.orderDate
+            );
 
-        const status =
-          String(row.status ?? "").trim() ||
-          null;
+          const importedOrderValue =
+            toNumber(
+              row.orderValue
+            );
 
-        await tx.salesOrder.upsert({
-          where: {
-            companyId_salesOrderNumber: {
-              companyId: membership.companyId,
-              salesOrderNumber,
+          const importedStatus =
+            textOrNull(
+              row.status
+            );
+
+          /*
+           * Never let a blank field in a later
+           * import erase good existing Sales
+           * Order information.
+           */
+          const customerAccountCode =
+            importedCustomerAccountCode ??
+            existingSalesOrder
+              ?.customerAccountCode ??
+            null;
+
+          const customerName =
+            importedCustomerName ??
+            existingSalesOrder
+              ?.customerName ??
+            null;
+
+          const orderDate =
+            importedOrderDate ??
+            existingSalesOrder
+              ?.orderDate ??
+            null;
+
+          const orderValue =
+            importedOrderValue ??
+            existingSalesOrder
+              ?.orderValue ??
+            null;
+
+          const status =
+            importedStatus ??
+            existingSalesOrder
+              ?.status ??
+            null;
+
+          await tx.salesOrder.upsert({
+            where: {
+              companyId_salesOrderNumber: {
+                companyId:
+                  membership.companyId,
+                salesOrderNumber,
+              },
             },
-          },
 
-          update: {
-            orderDate,
-            customerAccountCode,
-            customerName,
-            orderValue,
-            status,
-            importedAt: importBatchAt,
-          },
+            update: {
+              orderDate,
+              customerAccountCode,
+              customerName,
+              orderValue,
+              status,
+              importedAt:
+                importBatchAt,
+            },
 
-          create: {
-            companyId: membership.companyId,
-            salesOrderNumber,
-            orderDate,
-            customerAccountCode,
-            customerName,
-            orderValue,
-            status,
-            importedAt: importBatchAt,
-          },
-        });
+            create: {
+              companyId:
+                membership.companyId,
+              salesOrderNumber,
+              orderDate,
+              customerAccountCode,
+              customerName,
+              orderValue,
+              status,
+              importedAt:
+                importBatchAt,
+            },
+          });
 
-        imported++;
+          imported++;
+        }
       }
-    });
+    );
+
+    /*
+     * Refresh OdinIQ pages after new Sales Order
+     * data has been written.
+     */
+    revalidatePath("/commercial/customers", "layout");
+    revalidatePath("/despatch-audit", "layout");
+
 
     return NextResponse.json({
       success: true,
       imported,
       skipped,
-      received: rows.length,
+      received:
+        rows.length,
     });
   } catch (error) {
     console.error(

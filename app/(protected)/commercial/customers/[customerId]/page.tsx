@@ -41,9 +41,10 @@ type CustomerDetailPageProps = {
   }>;
 
   searchParams: Promise<{
-    activity?: string;
-    page?: string;
-  }>;
+  activity?: string;
+  page?: string;
+  products?: string;
+}>;
 };
 
 function normalizeStockCode(
@@ -215,8 +216,20 @@ export default async function CustomerDetailPage({
   const { customerId } =
     await params;
 
-  const { activity, page } =
-    await searchParams;
+  const {
+  activity,
+  page,
+  products,
+} = await searchParams;
+
+const productView =
+  products === "new"
+    ? "new"
+    : products === "growth"
+    ? "growth"
+    : products === "decline"
+    ? "decline"
+    : "top";
 
   const id = Number(customerId);
 
@@ -410,6 +423,549 @@ export default async function CustomerDetailPage({
   const hasSalesDecline =
     salesMovement !== null &&
     salesMovement < 0;
+
+  /*
+   * --------------------------------
+   * PRODUCT PERFORMANCE
+   * --------------------------------
+   *
+   * Compare product sales YTD with
+   * the same period last year.
+   *
+   * Credits reduce quantity and sales.
+   * Cancelled transactions are excluded.
+   */
+
+  type ProductPerformance = {
+    stockCode: string;
+    description: string;
+
+    currentQty: number;
+    currentSales: number;
+
+    previousQty: number;
+    previousSales: number;
+  };
+
+  const productPerformanceMap =
+    new Map<
+      string,
+      ProductPerformance
+    >();
+
+  const nonProductCodes =
+  new Set([
+    "M",
+    "MISC",
+    "S1",
+    "LAYOUT",
+    "PLTDELIVERY",
+    "STDELIVERY",
+  ]);
+
+  const currentYtdEnd =
+    new Date(
+      currentYear,
+      today.getMonth(),
+      today.getDate(),
+      23,
+      59,
+      59,
+      999
+    );
+
+  const previousYtdEnd =
+    new Date(
+      previousYear,
+      today.getMonth(),
+      today.getDate(),
+      23,
+      59,
+      59,
+      999
+    );
+
+  for (const invoice of invoices) {
+    if (
+      !invoice.invoiceDate ||
+      isCancelledTransaction(
+        invoice
+      )
+    ) {
+      continue;
+    }
+
+    const invoiceDate =
+      new Date(
+        invoice.invoiceDate
+      );
+
+    const invoiceYear =
+      invoiceDate.getFullYear();
+
+    const isCurrentYtd =
+      invoiceYear ===
+        currentYear &&
+      invoiceDate <=
+        currentYtdEnd;
+
+    const isPreviousYtd =
+      invoiceYear ===
+        previousYear &&
+      invoiceDate <=
+        previousYtdEnd;
+
+    if (
+      !isCurrentYtd &&
+      !isPreviousYtd
+    ) {
+      continue;
+    }
+
+    const credit =
+      isCreditNote(invoice);
+
+    for (const line of invoice.lines) {
+      const stockCode =
+        normalizeStockCode(
+          line.stockCode
+        );
+
+      if (
+        !stockCode ||
+        nonProductCodes.has(
+          stockCode
+        )
+      ) {
+        continue;
+      }
+
+      const rawQty =
+        Number(
+          line.quantity ?? 0
+        );
+
+      const rawSales =
+        Number(
+          line.netValue ?? 0
+        );
+
+      const quantity =
+        credit
+          ? -Math.abs(rawQty)
+          : rawQty;
+
+      const sales =
+        credit
+          ? -Math.abs(rawSales)
+          : rawSales;
+
+      const existing =
+        productPerformanceMap.get(
+          stockCode
+        ) ?? {
+          stockCode,
+
+          description:
+            line.description ??
+            "",
+
+          currentQty: 0,
+          currentSales: 0,
+
+          previousQty: 0,
+          previousSales: 0,
+        };
+
+      if (
+        !existing.description &&
+        line.description
+      ) {
+        existing.description =
+          line.description;
+      }
+
+      if (isCurrentYtd) {
+        existing.currentQty +=
+          quantity;
+
+        existing.currentSales +=
+          sales;
+      }
+
+      if (isPreviousYtd) {
+        existing.previousQty +=
+          quantity;
+
+        existing.previousSales +=
+          sales;
+      }
+
+      productPerformanceMap.set(
+        stockCode,
+        existing
+      );
+    }
+  }
+
+  const productPerformance =
+    [...productPerformanceMap.values()]
+      .map((product) => {
+        const salesChange =
+          product.currentSales -
+          product.previousSales;
+
+        const percentageChange =
+          product.previousSales !== 0
+            ? (salesChange /
+                Math.abs(
+                  product.previousSales
+                )) *
+              100
+            : product.currentSales >
+              0
+            ? null
+            : 0;
+
+        const isNew =
+          product.previousSales ===
+            0 &&
+          product.currentSales > 0;
+
+        return {
+          ...product,
+          salesChange,
+          percentageChange,
+          isNew,
+        };
+      })
+      .sort(
+        (a, b) =>
+          b.currentSales -
+          a.currentSales
+      );
+
+  const productsBoughtYtd =
+    productPerformance.filter(
+      (product) =>
+        product.currentQty > 0 ||
+        product.currentSales > 0
+    ).length;
+
+  const newProductsYtd =
+    productPerformance.filter(
+      (product) =>
+        product.isNew
+    ).length;
+
+  const biggestGrowthProduct =
+    [...productPerformance]
+      .filter(
+        (product) =>
+          product.salesChange > 0
+      )
+      .sort(
+        (a, b) =>
+          b.salesChange -
+          a.salesChange
+      )[0] ?? null;
+
+  const biggestDeclineProduct =
+    [...productPerformance]
+      .filter(
+        (product) =>
+          product.salesChange < 0
+      )
+      .sort(
+        (a, b) =>
+          a.salesChange -
+          b.salesChange
+      )[0] ?? null;
+
+const displayedProductPerformance =
+  productView === "new"
+    ? [...productPerformance]
+        .filter(
+          (product) =>
+            product.isNew
+        )
+        .sort(
+          (a, b) =>
+            b.currentSales -
+            a.currentSales
+        )
+    : productView === "growth"
+    ? [...productPerformance].sort(
+        (a, b) =>
+          b.salesChange -
+          a.salesChange
+      )
+    : productView === "decline"
+    ? [...productPerformance].sort(
+        (a, b) =>
+          a.salesChange -
+          b.salesChange
+      )
+    : [...productPerformance].sort(
+        (a, b) =>
+          b.currentSales -
+          a.currentSales
+      );
+
+const meetingTopGrowth =
+  [...productPerformance]
+    .filter(
+      (product) =>
+        product.salesChange > 0
+    )
+    .sort(
+      (a, b) =>
+        b.salesChange -
+        a.salesChange
+    )
+    .slice(0, 5);
+
+const meetingTopDeclines =
+  [...productPerformance]
+    .filter(
+      (product) =>
+        product.salesChange < 0
+    )
+    .sort(
+      (a, b) =>
+        a.salesChange -
+        b.salesChange
+    )
+    .slice(0, 5);
+
+const meetingNewProducts =
+  [...productPerformance]
+    .filter(
+      (product) =>
+        product.isNew
+    )
+    .sort(
+      (a, b) =>
+        b.currentSales -
+        a.currentSales
+    )
+    .slice(0, 5);
+
+const totalPositiveProductGrowth =
+  productPerformance
+    .filter(
+      (product) =>
+        product.salesChange > 0
+    )
+    .reduce(
+      (total, product) =>
+        total +
+        product.salesChange,
+      0
+    );
+
+const totalProductDecline =
+  Math.abs(
+    productPerformance
+      .filter(
+        (product) =>
+          product.salesChange < 0
+      )
+      .reduce(
+        (total, product) =>
+          total +
+          product.salesChange,
+        0
+      )
+  );
+
+  const odinTalkingPoints: {
+  title: string;
+  text: string;
+  type: "positive" | "opportunity" | "watch";
+}[] = [];
+
+/*
+ * Overall account performance
+ */
+if (
+  salesMovement !== null &&
+  salesMovement > 0
+) {
+  odinTalkingPoints.push({
+    title: "Strong Account Growth",
+    text: `${customer.name} is ${salesMovement.toFixed(
+      1
+    )}% ahead YTD, representing an increase of ${formatMoney(
+      salesMovementValue
+    )} versus the same period in ${previousYear}. Discuss what is driving the growth and how it can be sustained.`,
+    type: "positive",
+  });
+} else if (
+  salesMovement !== null &&
+  salesMovement < 0
+) {
+  odinTalkingPoints.push({
+    title: "Account Performance",
+    text: `${customer.name} is ${Math.abs(
+      salesMovement
+    ).toFixed(
+      1
+    )}% behind YTD, representing a reduction of ${formatMoney(
+      Math.abs(salesMovementValue)
+    )} versus ${previousYear}. Identify which areas of the account can be recovered.`,
+    type: "watch",
+  });
+}
+
+/*
+ * Possible product switch.
+ *
+ * For now we only flag products where the
+ * descriptions appear commercially related.
+ */
+
+let productShiftDeclineCode: string | null = null;
+let productShiftGrowthCode: string | null = null;
+
+for (const decline of meetingTopDeclines) {
+  if (decline.previousSales <= 0) continue;
+  
+
+  const declineWords =
+    decline.description
+      .toUpperCase()
+      .split(/[^A-Z0-9]+/)
+      .filter(
+        (word) =>
+          word.length >= 4
+      );
+
+  const possibleSwitch =
+    meetingTopGrowth.find(
+      (growth) => {
+        if (
+          growth.currentSales <= 0
+        ) {
+          return false;
+        }
+
+        const growthDescription =
+          growth.description.toUpperCase();
+
+        const matchingWords =
+          declineWords.filter(
+            (word) =>
+              growthDescription.includes(
+                word
+              )
+          );
+
+        return (
+          matchingWords.length >= 2
+        );
+      }
+    );
+
+  if (possibleSwitch) {
+  productShiftDeclineCode =
+    decline.stockCode;
+
+  productShiftGrowthCode =
+    possibleSwitch.stockCode;
+
+  odinTalkingPoints.push({
+      title: "Possible Product Shift",
+      text: `${decline.stockCode} has reduced by ${formatMoney(
+        Math.abs(
+          decline.salesChange
+        )
+      )}, while ${
+        possibleSwitch.stockCode
+      } has increased by ${formatMoney(
+        possibleSwitch.salesChange
+      )}. The products appear related, so establish whether this represents a specification or product-mix change rather than lost business.`,
+      type: "opportunity",
+    });
+
+    break;
+  }
+}
+
+/*
+ * New product adoption
+ */
+if (newProductsYtd > 0) {
+  odinTalkingPoints.push({
+    title: "Range Expansion",
+    text: `${customer.name} has bought ${newProductsYtd} products this year that had no equivalent sales in ${previousYear}. Discuss which successful new lines could be expanded further across the account.`,
+    type: "positive",
+  });
+}
+
+/*
+ * Largest genuine decline
+ */
+const recoveryOpportunity =
+  [...productPerformance]
+    .filter(
+      (product) =>
+        product.salesChange < 0 &&
+        product.stockCode !==
+          productShiftDeclineCode
+    )
+    .sort(
+      (a, b) =>
+        a.salesChange -
+        b.salesChange
+    )[0] ?? null;
+
+if (recoveryOpportunity) {
+  odinTalkingPoints.push({
+    title: "Recovery Opportunity",
+   text: `${
+  recoveryOpportunity.stockCode
+} is down ${formatMoney(
+  Math.abs(
+    recoveryOpportunity.salesChange
+  )
+)} versus ${previousYear}. Current YTD sales are ${formatMoney(
+  recoveryOpportunity.currentSales
+)} compared with ${formatMoney(
+  recoveryOpportunity.previousSales
+)} last year. No obvious replacement product has been identified. Ask whether this product has been discontinued, replaced by another specification, sourced elsewhere, or represents an opportunity to recover the business.`,
+    type: "watch",
+  });
+}
+
+/*
+ * Largest growth product
+ */
+const growthOpportunity =
+  [...productPerformance]
+    .filter(
+      (product) =>
+        product.salesChange > 0 &&
+        product.stockCode !==
+          productShiftGrowthCode
+    )
+    .sort(
+      (a, b) =>
+        b.salesChange -
+        a.salesChange
+    )[0] ?? null;
+
+if (growthOpportunity) {
+  odinTalkingPoints.push({
+    title: "Growth Opportunity",
+    text: `${
+      growthOpportunity.stockCode
+    } is a major product growth driver, up ${formatMoney(
+      growthOpportunity.salesChange
+   ) } versus ${previousYear}. Explore whether this success can be replicated across more of the customer's business.`,
+    type: "positive",
+  });
+}
 
   const fullYearSales =
     Array.from(
@@ -1661,6 +2217,22 @@ for (const alias of productAliases) {
                     1
                   )}%`}
             </p>
+
+<p
+  className={`mt-1 text-sm font-semibold ${
+    salesMovementValue >= 0
+      ? "text-emerald-700"
+      : "text-red-700"
+  }`}
+>
+  {salesMovementValue >= 0
+    ? "+"
+    : ""}
+  {formatMoney(
+    salesMovementValue
+  )} vs {previousYear}
+</p>
+
           </div>
         </div>
 
@@ -1689,6 +2261,526 @@ for (const alias of productAliases) {
             </div>
           )}
       </section>
+
+      <section
+  id="product-performance"
+  className="rounded-xl border bg-white p-6 shadow-sm"
+>
+        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-950">
+              Product Performance
+            </h2>
+
+            <p className="mt-1 text-sm text-slate-500">
+              Products bought YTD compared with the same period last year.
+              Credits reduce quantity and sales.
+            </p>
+          </div>
+
+          <div className="text-sm font-semibold text-slate-500">
+            {currentYear} vs {previousYear}
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <Link
+  href={`/commercial/customers/${customer.id}?products=top#product-performance`}
+  className={`rounded-lg p-4 transition ${
+    productView === "top"
+      ? "ring-2 ring-slate-950 bg-slate-100"
+      : "bg-slate-50 hover:bg-slate-100"
+  }`}
+>
+  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+    Products Bought YTD
+  </p>
+
+  <p className="mt-2 text-2xl font-bold text-slate-950">
+    {productsBoughtYtd}
+  </p>
+</Link>
+
+          <Link
+  href={`/commercial/customers/${customer.id}?products=new#product-performance`}
+  className={`rounded-lg p-4 transition ${
+    productView === "new"
+      ? "ring-2 ring-blue-700 bg-blue-100"
+      : "bg-blue-50 hover:bg-blue-100"
+  }`}
+>
+  <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+    New Products This Year
+  </p>
+
+  <p className="mt-2 text-2xl font-bold text-blue-800">
+    {newProductsYtd}
+  </p>
+</Link>
+
+          <Link
+  href={`/commercial/customers/${customer.id}?products=growth#product-performance`}
+  className={`rounded-lg p-4 transition ${
+    productView === "growth"
+      ? "ring-2 ring-emerald-700 bg-emerald-100"
+      : "bg-emerald-50 hover:bg-emerald-100"
+  }`}
+>
+  <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+    Biggest Growth
+  </p>
+
+  {biggestGrowthProduct ? (
+    <>
+      <p className="mt-2 font-bold text-emerald-800">
+        {biggestGrowthProduct.stockCode}
+      </p>
+
+      <p className="mt-1 text-sm text-emerald-700">
+        +
+        {formatMoney(
+          biggestGrowthProduct.salesChange
+        )}
+      </p>
+    </>
+  ) : (
+    <p className="mt-2 text-lg font-bold text-slate-700">
+      —
+    </p>
+  )}
+</Link>
+
+          <Link
+  href={`/commercial/customers/${customer.id}?products=decline#product-performance`}
+  className={`rounded-lg p-4 transition ${
+    productView === "decline"
+      ? "ring-2 ring-red-700 bg-red-100"
+      : "bg-red-50 hover:bg-red-100"
+  }`}
+>
+  <p className="text-xs font-semibold uppercase tracking-wide text-red-700">
+    Biggest Decline
+  </p>
+
+  {biggestDeclineProduct ? (
+    <>
+      <p className="mt-2 font-bold text-red-800">
+        {biggestDeclineProduct.stockCode}
+      </p>
+
+      <p className="mt-1 text-sm text-red-700">
+        {formatMoney(
+          biggestDeclineProduct.salesChange
+        )}
+      </p>
+    </>
+  ) : (
+    <p className="mt-2 text-lg font-bold text-slate-700">
+      —
+    </p>
+  )}
+</Link>
+        </div>
+
+        <div className="mt-6 overflow-x-auto rounded-lg border">
+          <table className="min-w-full text-sm">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-4 py-3 text-left font-semibold text-slate-600">
+                  Product
+                </th>
+
+                <th className="px-4 py-3 text-right font-semibold text-slate-600">
+                  {currentYear} Qty
+                </th>
+
+                <th className="px-4 py-3 text-right font-semibold text-slate-600">
+                  {currentYear} Sales
+                </th>
+
+                <th className="px-4 py-3 text-right font-semibold text-slate-600">
+                  {previousYear} Qty
+                </th>
+
+                <th className="px-4 py-3 text-right font-semibold text-slate-600">
+                  {previousYear} Sales
+                </th>
+
+                <th className="px-4 py-3 text-right font-semibold text-slate-600">
+                  £ Change
+                </th>
+
+                <th className="px-4 py-3 text-right font-semibold text-slate-600">
+                  % Change
+                </th>
+              </tr>
+            </thead>
+
+            <tbody className="divide-y divide-slate-200">
+              {displayedProductPerformance.map(
+                (product) => (
+                  <tr
+                    key={
+                      product.stockCode
+                    }
+                    className="hover:bg-slate-50"
+                  >
+                    <td className="px-4 py-3">
+                      <Link
+                        href={`/products/${encodeURIComponent(
+                          product.stockCode
+                        )}`}
+                        className="font-semibold text-slate-950 hover:text-amber-600 hover:underline"
+                      >
+                        {product.stockCode}
+                      </Link>
+
+                      {product.description && (
+                        <p className="mt-1 max-w-md text-xs text-slate-500">
+                          {
+                            product.description
+                          }
+                        </p>
+                      )}
+
+                      {product.isNew && (
+                        <span className="mt-1 inline-block rounded-full bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-700">
+                          NEW
+                        </span>
+                      )}
+                    </td>
+
+                    <td className="px-4 py-3 text-right font-semibold text-slate-950">
+                      {product.currentQty.toLocaleString(
+                        "en-GB",
+                        {
+                          maximumFractionDigits: 2,
+                        }
+                      )}
+                    </td>
+
+                    <td className="px-4 py-3 text-right font-semibold text-slate-950">
+                      {formatMoney(
+                        product.currentSales
+                      )}
+                    </td>
+
+                    <td className="px-4 py-3 text-right text-slate-700">
+                      {product.previousQty.toLocaleString(
+                        "en-GB",
+                        {
+                          maximumFractionDigits: 2,
+                        }
+                      )}
+                    </td>
+
+                    <td className="px-4 py-3 text-right text-slate-700">
+                      {formatMoney(
+                        product.previousSales
+                      )}
+                    </td>
+
+                    <td
+                      className={`px-4 py-3 text-right font-bold ${
+                        product.salesChange >
+                        0
+                          ? "text-emerald-700"
+                          : product.salesChange <
+                            0
+                          ? "text-red-700"
+                          : "text-slate-600"
+                      }`}
+                    >
+                      {product.salesChange >
+                      0
+                        ? "+"
+                        : ""}
+                      {formatMoney(
+                        product.salesChange
+                      )}
+                    </td>
+
+                    <td
+                      className={`px-4 py-3 text-right font-bold ${
+                        product.isNew
+                          ? "text-blue-700"
+                          : product.percentageChange !==
+                              null &&
+                            product.percentageChange >
+                              0
+                          ? "text-emerald-700"
+                          : product.percentageChange !==
+                              null &&
+                            product.percentageChange <
+                              0
+                          ? "text-red-700"
+                          : "text-slate-600"
+                      }`}
+                    >
+                      {product.isNew
+                        ? "NEW"
+                        : product.percentageChange ===
+                          null
+                        ? "—"
+                        : `${
+                            product.percentageChange >
+                            0
+                              ? "+"
+                              : ""
+                          }${product.percentageChange.toFixed(
+                            1
+                          )}%`}
+                    </td>
+                  </tr>
+                )
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+            <section className="rounded-xl border border-amber-200 bg-amber-50/40 p-6 shadow-sm">
+        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide text-amber-700">
+              OdinIQ Commercial Intelligence
+            </p>
+
+            <h2 className="mt-1 text-lg font-semibold text-slate-950">
+              Meeting Intelligence
+            </h2>
+
+            <p className="mt-1 text-sm text-slate-600">
+              Commercial talking points generated from this customer&apos;s
+              year-to-date performance.
+            </p>
+          </div>
+
+          <div className="rounded-lg bg-white px-4 py-3 text-right shadow-sm">
+            <p className="text-xs font-semibold uppercase text-slate-500">
+              YTD Movement
+            </p>
+
+            <p
+              className={`mt-1 text-xl font-bold ${
+                salesMovementValue >= 0
+                  ? "text-emerald-700"
+                  : "text-red-700"
+              }`}
+            >
+              {salesMovementValue >= 0 ? "+" : ""}
+              {formatMoney(salesMovementValue)}
+            </p>
+
+            <p className="text-xs text-slate-500">
+              {salesMovement === null
+                ? "No prior-year comparison"
+                : `${salesMovement >= 0 ? "+" : ""}${salesMovement.toFixed(
+                    1
+                  )}% vs ${previousYear}`}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-6 grid gap-4 lg:grid-cols-3">
+          <div className="rounded-xl border bg-white p-5">
+            <h3 className="font-semibold text-emerald-800">
+              Growth Drivers
+            </h3>
+
+            <p className="mt-1 text-xs text-slate-500">
+              Products contributing the largest £ increases.
+            </p>
+
+            <div className="mt-4 space-y-3">
+              {meetingTopGrowth.map((product, index) => (
+                <div
+                  key={product.stockCode}
+                  className="flex items-start justify-between gap-4"
+                >
+                  <div>
+                    <p className="font-semibold text-slate-950">
+                      {index + 1}. {product.stockCode}
+                    </p>
+
+                    {product.description && (
+                      <p className="text-xs text-slate-500">
+                        {product.description}
+                      </p>
+                    )}
+                  </div>
+
+                  <p className="whitespace-nowrap font-bold text-emerald-700">
+                    +{formatMoney(product.salesChange)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl border bg-white p-5">
+            <h3 className="font-semibold text-red-800">
+              Areas to Discuss
+            </h3>
+
+            <p className="mt-1 text-xs text-slate-500">
+              Products with the largest year-on-year reductions.
+            </p>
+
+            <div className="mt-4 space-y-3">
+              {meetingTopDeclines.map((product, index) => (
+                <div
+                  key={product.stockCode}
+                  className="flex items-start justify-between gap-4"
+                >
+                  <div>
+                    <p className="font-semibold text-slate-950">
+                      {index + 1}. {product.stockCode}
+                    </p>
+
+                    {product.description && (
+                      <p className="text-xs text-slate-500">
+                        {product.description}
+                      </p>
+                    )}
+                  </div>
+
+                  <p className="whitespace-nowrap font-bold text-red-700">
+                    {formatMoney(product.salesChange)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl border bg-white p-5">
+            <h3 className="font-semibold text-blue-800">
+              New Product Adoption
+            </h3>
+
+            <p className="mt-1 text-xs text-slate-500">
+              Highest-value products bought this year with no equivalent
+              sales last year.
+            </p>
+
+            <div className="mt-4 space-y-3">
+              {meetingNewProducts.map((product, index) => (
+                <div
+                  key={product.stockCode}
+                  className="flex items-start justify-between gap-4"
+                >
+                  <div>
+                    <p className="font-semibold text-slate-950">
+                      {index + 1}. {product.stockCode}
+                    </p>
+
+                    {product.description && (
+                      <p className="text-xs text-slate-500">
+                        {product.description}
+                      </p>
+                    )}
+                  </div>
+
+                  <p className="whitespace-nowrap font-bold text-blue-700">
+                    {formatMoney(product.currentSales)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4 md:grid-cols-3">
+          <div className="rounded-lg bg-emerald-50 p-4">
+            <p className="text-xs font-semibold uppercase text-emerald-700">
+              Positive Product Growth
+            </p>
+
+            <p className="mt-1 text-xl font-bold text-emerald-800">
+              +{formatMoney(totalPositiveProductGrowth)}
+            </p>
+          </div>
+
+          <div className="rounded-lg bg-red-50 p-4">
+            <p className="text-xs font-semibold uppercase text-red-700">
+              Product Reductions
+            </p>
+
+            <p className="mt-1 text-xl font-bold text-red-800">
+              -{formatMoney(totalProductDecline)}
+            </p>
+          </div>
+
+          <div className="rounded-lg bg-blue-50 p-4">
+            <p className="text-xs font-semibold uppercase text-blue-700">
+              New Products
+            </p>
+
+            <p className="mt-1 text-xl font-bold text-blue-800">
+              {newProductsYtd}
+            </p>
+
+            <p className="mt-1 text-xs text-blue-700">
+              products adopted in {currentYear}
+            </p>
+          </div>
+        </div>
+
+        {odinTalkingPoints.length > 0 && (
+          <div className="mt-6 rounded-xl border bg-white p-5">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide text-amber-700">
+                Ask Odin
+              </p>
+
+              <h3 className="mt-1 text-lg font-semibold text-slate-950">
+                Suggested Talking Points
+              </h3>
+
+              <p className="mt-1 text-sm text-slate-500">
+                Commercial questions and opportunities identified from the
+                customer&apos;s current performance.
+              </p>
+            </div>
+
+            <div className="mt-5 grid gap-4 lg:grid-cols-2">
+              {odinTalkingPoints.map(
+                (point, index) => (
+                  <div
+                    key={`${point.title}-${index}`}
+                    className={`rounded-lg border p-4 ${
+                      point.type === "positive"
+                        ? "border-emerald-200 bg-emerald-50"
+                        : point.type === "opportunity"
+                        ? "border-amber-200 bg-amber-50"
+                        : "border-red-200 bg-red-50"
+                    }`}
+                  >
+                    <p
+                      className={`font-bold ${
+                        point.type === "positive"
+                          ? "text-emerald-800"
+                          : point.type === "opportunity"
+                          ? "text-amber-800"
+                          : "text-red-800"
+                      }`}
+                    >
+                      {point.title}
+                    </p>
+
+                    <p className="mt-2 text-sm leading-6 text-slate-700">
+                      {point.text}
+                    </p>
+                  </div>
+                )
+              )}
+            </div>
+          </div>
+        )}
+
+      </section>
+
+
 
       {canViewProfitability &&
         profitability && (
@@ -2323,7 +3415,10 @@ for (const alias of productAliases) {
           </section>
         )}
 
-      <section className="rounded-xl border bg-white p-6 shadow-sm">
+      <section
+  id="product-performance"
+  className="rounded-xl border bg-white p-6 shadow-sm"
+>
         <h2 className="text-lg font-semibold text-slate-950">
           Full Year Sales History
         </h2>

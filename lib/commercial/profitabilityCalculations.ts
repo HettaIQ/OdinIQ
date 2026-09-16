@@ -36,6 +36,7 @@ function isRealStockCode(value: string | null | undefined) {
 
   const nonStockCodes = new Set([
     "M",
+    "S1",
     "LAYOUT",
     "PLTDELIVERY",
     "STDELIVERY",
