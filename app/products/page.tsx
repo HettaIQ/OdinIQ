@@ -23,7 +23,19 @@ function roundMoney(value: number) {
   return Number(value.toFixed(2));
 }
 
-export default async function ProductsPage() {
+export default async function ProductsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    period?: string;
+  }>;
+}) {
+
+  const params = await searchParams;
+
+  const period =
+    params.period ?? "ytd";
+
   const user = await requireAuth();
   const membership = user.memberships[0];
 
@@ -95,16 +107,12 @@ export default async function ProductsPage() {
    * Using the same cutoff date makes the
    * year-on-year comparison fair.
    */
-  const today = new Date();
+    const today = new Date();
 
   const currentYear = today.getFullYear();
   const previousYear = currentYear - 1;
 
-  const currentStart = new Date(
-    Date.UTC(currentYear, 0, 1)
-  );
-
-  const currentEnd = new Date(
+  const todayEnd = new Date(
     Date.UTC(
       currentYear,
       today.getMonth(),
@@ -112,17 +120,127 @@ export default async function ProductsPage() {
     )
   );
 
-  const previousStart = new Date(
-    Date.UTC(previousYear, 0, 1)
-  );
+  let currentStart: Date;
+  let currentEnd: Date;
+  let previousStart: Date;
+  let previousEnd: Date;
 
-  const previousEnd = new Date(
-    Date.UTC(
-      previousYear,
-      today.getMonth(),
-      today.getDate() + 1
-    )
-  );
+  switch (period) {
+    case "this-month":
+      currentStart = new Date(
+        Date.UTC(
+          currentYear,
+          today.getMonth(),
+          1
+        )
+      );
+
+      currentEnd = todayEnd;
+
+      previousStart = new Date(
+        Date.UTC(
+          previousYear,
+          today.getMonth(),
+          1
+        )
+      );
+
+      previousEnd = new Date(
+        Date.UTC(
+          previousYear,
+          today.getMonth(),
+          today.getDate() + 1
+        )
+      );
+      break;
+
+    case "last-month": {
+      const lastMonthStart = new Date(
+        Date.UTC(
+          currentYear,
+          today.getMonth() - 1,
+          1
+        )
+      );
+
+      const lastMonthEnd = new Date(
+        Date.UTC(
+          currentYear,
+          today.getMonth(),
+          1
+        )
+      );
+
+      currentStart = lastMonthStart;
+      currentEnd = lastMonthEnd;
+
+      previousStart = new Date(
+        Date.UTC(
+          lastMonthStart.getUTCFullYear() - 1,
+          lastMonthStart.getUTCMonth(),
+          1
+        )
+      );
+
+      previousEnd = new Date(
+        Date.UTC(
+          lastMonthEnd.getUTCFullYear() - 1,
+          lastMonthEnd.getUTCMonth(),
+          1
+        )
+      );
+      break;
+    }
+
+    case "last-12-months":
+      currentStart = new Date(
+        Date.UTC(
+          currentYear - 1,
+          today.getMonth(),
+          today.getDate()
+        )
+      );
+
+      currentEnd = todayEnd;
+
+      previousStart = new Date(
+        Date.UTC(
+          currentYear - 2,
+          today.getMonth(),
+          today.getDate()
+        )
+      );
+
+      previousEnd = new Date(
+        Date.UTC(
+          currentYear - 1,
+          today.getMonth(),
+          today.getDate() + 1
+        )
+      );
+      break;
+
+    case "ytd":
+    default:
+      currentStart = new Date(
+        Date.UTC(currentYear, 0, 1)
+      );
+
+      currentEnd = todayEnd;
+
+      previousStart = new Date(
+        Date.UTC(previousYear, 0, 1)
+      );
+
+      previousEnd = new Date(
+        Date.UTC(
+          previousYear,
+          today.getMonth(),
+          today.getDate() + 1
+        )
+      );
+      break;
+  }
 
   /*
    * Fetch only the invoice-line fields
@@ -458,11 +576,12 @@ export default async function ProductsPage() {
       </section>
 
       <ProductExplorerClient
-        products={productsWithSales}
-        canViewCommercialProductData={
-          canViewCommercialProductData
-        }
-      />
+  products={productsWithSales}
+  canViewCommercialProductData={
+    canViewCommercialProductData
+  }
+  period={period}
+/>
     </div>
   );
 }

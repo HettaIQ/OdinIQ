@@ -23,6 +23,7 @@ type Product = {
 type ProductExplorerClientProps = {
   products: Product[];
   canViewCommercialProductData: boolean;
+  period: string;
 };
 
 type SortOption =
@@ -48,6 +49,7 @@ type SortOption =
 export default function ProductExplorerClient({
   products,
   canViewCommercialProductData,
+  period,
 }: ProductExplorerClientProps) {
   const [query, setQuery] = useState("");
   const [supplier, setSupplier] = useState("");
@@ -250,9 +252,9 @@ export default function ProductExplorerClient({
             );
 
           case "movement-desc":
-            return compareNullableNumbers(
-              second.salesMovement,
-              first.salesMovement
+            return compareGrowthDescending(
+              first,
+              second
             );
 
           case "movement-asc":
@@ -318,8 +320,115 @@ export default function ProductExplorerClient({
     setPage(1);
   }
 
+  const periodLabels =
+    getPeriodLabels(period);
+
   return (
     <>
+
+      <div
+        style={{
+          display: "flex",
+          gap: "12px",
+          flexWrap: "wrap",
+          marginTop: "24px",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => {
+            setSort("sales-desc");
+            setPage(1);
+          }}
+          style={quickSortButtonStyle(
+            sort === "sales-desc"
+          )}
+        >
+          🏆 Best Sellers by Sales
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setSort("qty-desc");
+            setPage(1);
+          }}
+          style={quickSortButtonStyle(
+            sort === "qty-desc"
+          )}
+        >
+          📦 Best Sellers by Quantity
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setSort("movement-desc");
+            setPage(1);
+          }}
+          style={quickSortButtonStyle(
+            sort === "movement-desc"
+          )}
+        >
+          📈 Biggest Growth
+        </button>
+      </div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "10px",
+          flexWrap: "wrap",
+          marginTop: "14px",
+        }}
+      >
+        <span
+          style={{
+            color: "#777777",
+            fontSize: "14px",
+            fontWeight: "bold",
+            marginRight: "4px",
+          }}
+        >
+          Sales period:
+        </span>
+
+        <Link
+          href="/products?period=this-month"
+          style={periodButtonStyle(
+            period === "this-month"
+          )}
+        >
+          This Month
+        </Link>
+
+        <Link
+          href="/products?period=last-month"
+          style={periodButtonStyle(
+            period === "last-month"
+          )}
+        >
+          Last Month
+        </Link>
+
+        <Link
+          href="/products?period=ytd"
+          style={periodButtonStyle(
+            period === "ytd"
+          )}
+        >
+          YTD
+        </Link>
+
+        <Link
+          href="/products?period=last-12-months"
+          style={periodButtonStyle(
+            period === "last-12-months"
+          )}
+        >
+          Last 12 Months
+        </Link>
+      </div>
       <div
         style={{
           marginTop: "30px",
@@ -416,15 +525,15 @@ export default function ProductExplorerClient({
           </option>
 
           <option value="sales-desc">
-            Sales YTD — highest
+            {periodLabels.sales} — highest
           </option>
 
           <option value="sales-asc">
-            Sales YTD — lowest
+            {periodLabels.sales} — lowest
           </option>
 
           <option value="previous-sales-desc">
-            Last year YTD — highest
+            {periodLabels.previousSales} — highest
           </option>
 
           <option value="movement-desc">
@@ -553,9 +662,22 @@ export default function ProductExplorerClient({
               color: "#ffffff",
             }}
           >
-            {
-              filteredProducts.length
-            }
+            {filteredProducts.length === 0
+              ? "0"
+              : supplier
+              ? filteredProducts.length
+              : `${(safePage - 1) * pageSize + 1}-${Math.min(
+                  safePage * pageSize,
+                  filteredProducts.length
+                )}`}
+          </strong>{" "}
+          of{" "}
+          <strong
+            style={{
+              color: "#ffffff",
+            }}
+          >
+            {filteredProducts.length}
           </strong>{" "}
           products
         </p>
@@ -639,7 +761,7 @@ export default function ProductExplorerClient({
   }}
   title="Click to sort by quantity sold"
 >
-  Qty Sold YTD{" "}
+  {periodLabels.qty}{" "}
   {sort === "qty-desc"
     ? "↓"
     : sort === "qty-asc"
@@ -650,13 +772,13 @@ export default function ProductExplorerClient({
                 <th
                   style={numberHeadingStyle}
                 >
-                  Sales YTD
+                  {periodLabels.sales}
                 </th>
 
                 <th
                   style={numberHeadingStyle}
                 >
-                  2025 YTD
+                  {periodLabels.previousSales}
                 </th>
 
                 <th
@@ -1028,6 +1150,170 @@ export default function ProductExplorerClient({
   );
 }
 
+function compareGrowthDescending(
+  first: Product,
+  second: Product
+) {
+  /*
+   * Biggest Growth should prioritise genuine
+   * percentage growth from an existing
+   * comparison-period sales value.
+   *
+   * NEW products (sales now, zero before)
+   * come after genuine percentage growth.
+   * Products with no current sales come last.
+   */
+  const firstHasCurrentSales =
+    first.salesYtd > 0;
+  const secondHasCurrentSales =
+    second.salesYtd > 0;
+
+  if (
+    firstHasCurrentSales !==
+    secondHasCurrentSales
+  ) {
+    return firstHasCurrentSales
+      ? -1
+      : 1;
+  }
+
+  const firstHasMovement =
+    first.salesMovement !== null;
+  const secondHasMovement =
+    second.salesMovement !== null;
+
+  if (
+    firstHasMovement &&
+    secondHasMovement
+  ) {
+    const movementDifference =
+      (second.salesMovement ?? 0) -
+      (first.salesMovement ?? 0);
+
+    if (movementDifference !== 0) {
+      return movementDifference;
+    }
+
+    return (
+      second.salesYtd -
+      first.salesYtd
+    );
+  }
+
+  if (
+    firstHasMovement !==
+    secondHasMovement
+  ) {
+    return firstHasMovement
+      ? -1
+      : 1;
+  }
+
+  const firstIsNew =
+    first.salesYtd > 0 &&
+    first.previousYearSalesYtd === 0;
+
+  const secondIsNew =
+    second.salesYtd > 0 &&
+    second.previousYearSalesYtd === 0;
+
+  if (firstIsNew !== secondIsNew) {
+    return firstIsNew
+      ? -1
+      : 1;
+  }
+
+  return (
+    second.salesYtd -
+    first.salesYtd
+  );
+}
+
+function getPeriodLabels(
+  period: string
+) {
+  const now = new Date();
+
+  const monthFormatter =
+    new Intl.DateTimeFormat(
+      "en-GB",
+      {
+        month: "short",
+        year: "numeric",
+        timeZone: "UTC",
+      }
+    );
+
+  switch (period) {
+    case "this-month":
+      return {
+        qty: "Qty This Month",
+        sales: `Sales ${monthFormatter.format(
+          now
+        )}`,
+        previousSales: `Sales ${monthFormatter.format(
+          new Date(
+            Date.UTC(
+              now.getUTCFullYear() - 1,
+              now.getUTCMonth(),
+              1
+            )
+          )
+        )}`,
+      };
+
+    case "last-month": {
+      const currentMonth =
+        new Date(
+          Date.UTC(
+            now.getUTCFullYear(),
+            now.getUTCMonth() - 1,
+            1
+          )
+        );
+
+      const previousMonth =
+        new Date(
+          Date.UTC(
+            currentMonth.getUTCFullYear() - 1,
+            currentMonth.getUTCMonth(),
+            1
+          )
+        );
+
+      return {
+        qty: `Qty ${monthFormatter.format(
+          currentMonth
+        )}`,
+        sales: `Sales ${monthFormatter.format(
+          currentMonth
+        )}`,
+        previousSales: `Sales ${monthFormatter.format(
+          previousMonth
+        )}`,
+      };
+    }
+
+    case "last-12-months":
+      return {
+        qty: "Qty Last 12 Months",
+        sales: "Sales Last 12 Months",
+        previousSales:
+          "Previous 12 Months",
+      };
+
+    case "ytd":
+    default:
+      return {
+        qty: "Qty Sold YTD",
+        sales: `Sales ${now.getUTCFullYear()} YTD`,
+        previousSales: `Sales ${
+          now.getUTCFullYear() - 1
+        } YTD`,
+      };
+  }
+}
+
 function calculateMargin(
   product: Product
 ): number | null {
@@ -1258,3 +1544,46 @@ const numberCellStyle = {
   textAlign: "right" as const,
   whiteSpace: "nowrap" as const,
 };
+function quickSortButtonStyle(
+  active: boolean
+) {
+  return {
+    padding: "11px 16px",
+    borderRadius: "9px",
+    border: active
+      ? "1px solid #d4af37"
+      : "1px solid #333333",
+    background: active
+      ? "#d4af37"
+      : "#151515",
+    color: active
+      ? "#111111"
+      : "#ffffff",
+    cursor: "pointer",
+    fontWeight: "bold",
+    fontSize: "14px",
+  };
+}
+function periodButtonStyle(
+  active: boolean
+) {
+  return {
+    display: "inline-block",
+    padding: "8px 13px",
+    borderRadius: "8px",
+    border: active
+      ? "1px solid #d4af37"
+      : "1px solid #333333",
+    background: active
+      ? "#2a2512"
+      : "#151515",
+    color: active
+      ? "#d4af37"
+      : "#bbbbbb",
+    textDecoration: "none",
+    fontWeight: active
+      ? "bold"
+      : "normal",
+    fontSize: "13px",
+  };
+}
