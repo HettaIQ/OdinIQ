@@ -898,6 +898,11 @@ model SalesOrder {
   investigatedBy      String?
   investigatedAt      DateTime?
 
+    warehouseStatus      String    @default("ORDER_RECEIVED")
+    warehouseStatusBy    String?
+    warehouseStatusAt    DateTime?
+    warehouseNote        String?
+
   importedAt DateTime @default(now())
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
