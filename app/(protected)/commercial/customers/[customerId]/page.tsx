@@ -44,6 +44,9 @@ type CustomerDetailPageProps = {
   activity?: string;
   page?: string;
   products?: string;
+  activityPeriod?: string;
+  activityFrom?: string;
+  activityTo?: string;
 }>;
 };
 
@@ -220,6 +223,9 @@ export default async function CustomerDetailPage({
   activity,
   page,
   products,
+  activityPeriod,
+  activityFrom,
+  activityTo,
 } = await searchParams;
 
 const productView =
@@ -255,6 +261,95 @@ const productView =
         "cancelled"
       ? "cancelled"
       : "all";
+
+  const selectedActivityPeriod =
+    activityPeriod === "this-month" ||
+    activityPeriod === "last-month" ||
+    activityPeriod === "ytd" ||
+    activityPeriod === "custom"
+      ? activityPeriod
+      : "all";
+
+  const activityToday = new Date();
+
+  function parseActivityDate(
+    value: string | undefined,
+    endOfDay = false
+  ) {
+    if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      return null;
+    }
+
+    const [year, month, day] =
+      value.split("-").map(Number);
+
+    const date = new Date(
+      year,
+      month - 1,
+      day,
+      endOfDay ? 23 : 0,
+      endOfDay ? 59 : 0,
+      endOfDay ? 59 : 0,
+      endOfDay ? 999 : 0
+    );
+
+    return Number.isNaN(date.getTime())
+      ? null
+      : date;
+  }
+
+  let activityStartDate: Date | null = null;
+  let activityEndDate: Date | null = null;
+
+  if (selectedActivityPeriod === "this-month") {
+    activityStartDate = new Date(
+      activityToday.getFullYear(),
+      activityToday.getMonth(),
+      1
+    );
+    activityEndDate = new Date(
+      activityToday.getFullYear(),
+      activityToday.getMonth(),
+      activityToday.getDate(),
+      23, 59, 59, 999
+    );
+  } else if (selectedActivityPeriod === "last-month") {
+    activityStartDate = new Date(
+      activityToday.getFullYear(),
+      activityToday.getMonth() - 1,
+      1
+    );
+    activityEndDate = new Date(
+      activityToday.getFullYear(),
+      activityToday.getMonth(),
+      0,
+      23, 59, 59, 999
+    );
+  } else if (selectedActivityPeriod === "ytd") {
+    activityStartDate = new Date(
+      activityToday.getFullYear(),
+      0,
+      1
+    );
+    activityEndDate = new Date(
+      activityToday.getFullYear(),
+      activityToday.getMonth(),
+      activityToday.getDate(),
+      23, 59, 59, 999
+    );
+  } else if (selectedActivityPeriod === "custom") {
+    activityStartDate =
+      parseActivityDate(activityFrom);
+    activityEndDate =
+      parseActivityDate(activityTo, true);
+  }
+
+  const invalidActivityDateRange =
+    Boolean(
+      activityStartDate &&
+      activityEndDate &&
+      activityStartDate > activityEndDate
+    );
 
   const customer =
     await prisma.customer.findFirst({
@@ -1959,42 +2054,159 @@ for (const alias of productAliases) {
     return bTime - aTime;
   });
 
-  const filteredActivity =
-    allActivity.filter(
-      (item) => {
-        if (
-          activityFilter ===
-          "credits"
-        ) {
-          return (
-            item.kind ===
-            "credit"
-          );
-        }
-
-        if (
-          activityFilter ===
-          "invoices"
-        ) {
-          return (
-            item.kind ===
-            "invoice"
-          );
-        }
-
-        if (
-          activityFilter ===
-          "cancelled"
-        ) {
-          return (
-            item.kind ===
-            "cancelled"
-          );
-        }
-
-        return true;
+  const periodActivity =
+    allActivity.filter((item) => {
+      if (invalidActivityDateRange) {
+        return false;
       }
-    );
+
+      if (activityStartDate || activityEndDate) {
+        if (!item.date) {
+          return false;
+        }
+
+        const itemDate = new Date(item.date);
+
+        if (
+          activityStartDate &&
+          itemDate < activityStartDate
+        ) {
+          return false;
+        }
+
+        if (
+          activityEndDate &&
+          itemDate > activityEndDate
+        ) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+
+  const activityInvoiceCount =
+    periodActivity.filter(
+      (item) => item.kind === "invoice"
+    ).length;
+
+  const activityCreditCount =
+    periodActivity.filter(
+      (item) => item.kind === "credit"
+    ).length;
+
+  const activityCancelledCount =
+    periodActivity.filter(
+      (item) => item.kind === "cancelled"
+    ).length;
+
+  const activityInvoiceValue =
+    periodActivity
+      .filter((item) => item.kind === "invoice")
+      .reduce(
+        (total, item) => total + item.value,
+        0
+      );
+
+  const activityCreditValue =
+    periodActivity
+      .filter((item) => item.kind === "credit")
+      .reduce(
+        (total, item) =>
+          total + Math.abs(item.value),
+        0
+      );
+
+  const activityNetSalesValue =
+    periodActivity
+      .filter(
+        (item) =>
+          item.kind === "invoice" ||
+          item.kind === "credit"
+      )
+      .reduce(
+        (total, item) => total + item.value,
+        0
+      );
+
+  const activityCancelledValue =
+    periodActivity
+      .filter(
+        (item) => item.kind === "cancelled"
+      )
+      .reduce(
+        (total, item) => total + item.value,
+        0
+      );
+
+  const filteredActivity =
+    periodActivity.filter((item) => {
+      if (activityFilter === "credits") {
+        return item.kind === "credit";
+      }
+
+      if (activityFilter === "invoices") {
+        return item.kind === "invoice";
+      }
+
+      if (activityFilter === "cancelled") {
+        return item.kind === "cancelled";
+      }
+
+      return true;
+    });
+
+  function activityHref(options: {
+    activity?: string;
+    activityPeriod?: string;
+    page?: number;
+  } = {}) {
+    const nextActivity =
+      options.activity ?? activityFilter;
+
+    const nextPeriod =
+      options.activityPeriod ??
+      selectedActivityPeriod;
+
+    const query = new URLSearchParams();
+
+    if (nextActivity !== "all") {
+      query.set("activity", nextActivity);
+    }
+
+    if (nextPeriod !== "all") {
+      query.set("activityPeriod", nextPeriod);
+    }
+
+    if (
+      nextPeriod === "custom" &&
+      activityFrom
+    ) {
+      query.set("activityFrom", activityFrom);
+    }
+
+    if (
+      nextPeriod === "custom" &&
+      activityTo
+    ) {
+      query.set("activityTo", activityTo);
+    }
+
+    if ((options.page ?? 1) > 1) {
+      query.set(
+        "page",
+        String(options.page)
+      );
+    }
+if (!customer) {
+  return "/commercial/customers";
+}
+    const queryString = query.toString();
+
+    return `/commercial/customers/${customer.id}${
+      queryString ? `?${queryString}` : ""
+    }#recent-sales-activity`;
+  }
 
   const totalActivityPages =
     Math.max(
@@ -3543,65 +3755,198 @@ for (const alias of productAliases) {
         id="recent-sales-activity"
         className="rounded-xl border bg-white shadow-sm"
       >
-        <div className="flex flex-col gap-4 border-b px-6 py-5 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-950">
-              Recent Sales Activity
-            </h2>
+        <div className="border-b px-6 py-5">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-950">
+                Recent Sales Activity
+              </h2>
 
-            <p className="mt-1 text-sm text-slate-500">
-              Latest invoices, credit notes and cancelled Sales Orders recorded against this customer.
-            </p>
+              <p className="mt-1 text-sm text-slate-500">
+                Filter activity by date and see the total number and value of transactions for the selected period.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {[
+                ["all", "All"],
+                ["invoices", "Invoices"],
+                ["credits", "Credits"],
+                ["cancelled", "Cancelled"],
+              ].map(([value, label]) => (
+                <Link
+                  key={value}
+                  href={activityHref({
+                    activity: value,
+                    page: 1,
+                  })}
+                  className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
+                    activityFilter === value
+                      ? value === "credits"
+                        ? "border-red-700 bg-red-700 text-white"
+                        : value === "cancelled"
+                        ? "border-slate-600 bg-slate-600 text-white"
+                        : "border-slate-950 bg-slate-950 text-white"
+                      : value === "credits"
+                      ? "border-slate-300 bg-white text-red-700 hover:bg-red-50"
+                      : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  {label}
+                </Link>
+              ))}
+            </div>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href={`/commercial/customers/${customer.id}#recent-sales-activity`}
-              className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
-                activityFilter ===
-                "all"
-                  ? "border-slate-950 bg-slate-950 text-white"
-                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-              }`}
-            >
-              All
-            </Link>
+          <div className="mt-5 flex flex-wrap gap-2">
+            {[
+              ["all", "All Dates"],
+              ["this-month", "This Month"],
+              ["last-month", "Last Month"],
+              ["ytd", "YTD"],
+            ].map(([value, label]) => (
+              <Link
+                key={value}
+                href={activityHref({
+                  activityPeriod: value,
+                  page: 1,
+                })}
+                className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
+                  selectedActivityPeriod === value
+                    ? "border-amber-500 bg-amber-50 text-amber-800"
+                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                {label}
+              </Link>
+            ))}
+          </div>
 
-            <Link
-              href={`/commercial/customers/${customer.id}?activity=invoices#recent-sales-activity`}
-              className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
-                activityFilter ===
-                "invoices"
-                  ? "border-slate-950 bg-slate-950 text-white"
-                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-              }`}
-            >
-              Invoices
-            </Link>
+          <form
+            method="get"
+            action={`/commercial/customers/${customer.id}`}
+            className="mt-4 flex flex-col gap-3 rounded-lg bg-slate-50 p-4 md:flex-row md:items-end"
+          >
+            {activityFilter !== "all" && (
+              <input
+                type="hidden"
+                name="activity"
+                value={activityFilter}
+              />
+            )}
 
-            <Link
-              href={`/commercial/customers/${customer.id}?activity=credits#recent-sales-activity`}
-              className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
-                activityFilter ===
-                "credits"
-                  ? "border-red-700 bg-red-700 text-white"
-                  : "border-slate-300 bg-white text-red-700 hover:bg-red-50"
-              }`}
-            >
-              Credits
-            </Link>
+            <input
+              type="hidden"
+              name="activityPeriod"
+              value="custom"
+            />
 
-            <Link
-              href={`/commercial/customers/${customer.id}?activity=cancelled#recent-sales-activity`}
-              className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
-                activityFilter ===
-                "cancelled"
-                  ? "border-slate-600 bg-slate-600 text-white"
-                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-              }`}
+            <div>
+              <label
+                htmlFor="activityFrom"
+                className="block text-xs font-semibold uppercase tracking-wide text-slate-500"
+              >
+                From
+              </label>
+              <input
+                id="activityFrom"
+                name="activityFrom"
+                type="date"
+                defaultValue={activityFrom ?? ""}
+                className="mt-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950"
+              />
+            </div>
+
+            <div>
+              <label
+                htmlFor="activityTo"
+                className="block text-xs font-semibold uppercase tracking-wide text-slate-500"
+              >
+                To
+              </label>
+              <input
+                id="activityTo"
+                name="activityTo"
+                type="date"
+                defaultValue={activityTo ?? ""}
+                className="mt-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950"
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
             >
-              Cancelled
-            </Link>
+              Apply Date Range
+            </button>
+
+            {selectedActivityPeriod !== "all" && (
+              <Link
+                href={activityHref({
+                  activityPeriod: "all",
+                  page: 1,
+                })}
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-center text-sm font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                Clear Dates
+              </Link>
+            )}
+          </form>
+
+          {invalidActivityDateRange && (
+            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+              The From date must be before the To date.
+            </div>
+          )}
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-lg border bg-white p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Invoices
+              </p>
+              <p className="mt-1 text-2xl font-bold text-slate-950">
+                {activityInvoiceCount}
+              </p>
+              <p className="mt-1 text-sm font-semibold text-slate-700">
+                {formatMoney(activityInvoiceValue)}
+              </p>
+            </div>
+
+            <div className="rounded-lg border bg-white p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Credits
+              </p>
+              <p className="mt-1 text-2xl font-bold text-red-700">
+                {activityCreditCount}
+              </p>
+              <p className="mt-1 text-sm font-semibold text-red-700">
+                {formatMoney(activityCreditValue)}
+              </p>
+            </div>
+
+            <div className="rounded-lg border bg-white p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Net Sales
+              </p>
+              <p className="mt-1 text-2xl font-bold text-emerald-700">
+                {formatMoney(activityNetSalesValue)}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Invoices less credits
+              </p>
+            </div>
+
+            <div className="rounded-lg border bg-white p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Cancelled Orders
+              </p>
+              <p className="mt-1 text-2xl font-bold text-slate-700">
+                {activityCancelledCount}
+              </p>
+              <p className="mt-1 text-sm font-semibold text-slate-600">
+                {formatMoney(activityCancelledValue)}
+              </p>
+            </div>
           </div>
         </div>
 
@@ -3612,15 +3957,12 @@ for (const alias of productAliases) {
                 <th className="px-6 py-3 text-left font-semibold text-slate-600">
                   Date
                 </th>
-
                 <th className="px-6 py-3 text-left font-semibold text-slate-600">
                   Type
                 </th>
-
                 <th className="px-6 py-3 text-left font-semibold text-slate-600">
                   Reference
                 </th>
-
                 <th className="px-6 py-3 text-right font-semibold text-slate-600">
                   Net Value
                 </th>
@@ -3628,97 +3970,82 @@ for (const alias of productAliases) {
             </thead>
 
             <tbody className="divide-y divide-slate-200">
-              {paginatedActivity.map(
-                (item) => {
-                  const credit =
-                    item.kind ===
-                    "credit";
+              {paginatedActivity.map((item) => {
+                const credit =
+                  item.kind === "credit";
+                const cancelled =
+                  item.kind === "cancelled";
 
-                  const cancelled =
-                    item.kind ===
-                    "cancelled";
+                return (
+                  <tr
+                    key={`${item.kind}-${item.reference}`}
+                  >
+                    <td className="px-6 py-4 text-slate-700">
+                      {formatDate(item.date)}
+                    </td>
 
-                  return (
-                    <tr
-                      key={`${item.kind}-${item.reference}`}
-                    >
-                      <td className="px-6 py-4 text-slate-700">
-                        {formatDate(
-                          item.date
-                        )}
-                      </td>
+                    <td className="px-6 py-4">
+                      <span
+                        className={
+                          cancelled
+                            ? "font-semibold text-slate-600"
+                            : credit
+                            ? "font-semibold text-red-700"
+                            : "font-semibold text-emerald-700"
+                        }
+                      >
+                        {cancelled
+                          ? "Cancelled"
+                          : credit
+                          ? "Credit"
+                          : "Invoice"}
+                      </span>
+                    </td>
 
-                      <td className="px-6 py-4">
-                        <span
+                    <td className="px-6 py-4 font-semibold">
+                      {cancelled ? (
+                        <Link
+                          href={`/sales-orders/${item.salesOrderNumber}`}
+                          className="text-slate-950 hover:text-amber-600 hover:underline"
+                        >
+                          SO {item.reference}
+                        </Link>
+                      ) : (
+                        <Link
+                          href={`/commercial/customers/${customer.id}/invoices/${item.reference}`}
                           className={
-                            cancelled
-                              ? "font-semibold text-slate-600"
-                              : credit
-                              ? "font-semibold text-red-700"
-                              : "font-semibold text-emerald-700"
+                            credit
+                              ? "text-red-700 hover:text-red-800 hover:underline"
+                              : "text-slate-950 hover:text-amber-600 hover:underline"
                           }
                         >
-                          {cancelled
-                            ? "Cancelled"
-                            : credit
-                            ? "Credit"
-                            : "Invoice"}
-                        </span>
-                      </td>
+                          {item.reference}
+                        </Link>
+                      )}
+                    </td>
 
-                      <td className="px-6 py-4 font-semibold">
-                        {cancelled ? (
-                          <Link
-                            href={`/sales-orders/${item.salesOrderNumber}`}
-                            className="text-slate-950 hover:text-amber-600 hover:underline"
-                          >
-                            SO{" "}
-                            {
-                              item.reference
-                            }
-                          </Link>
-                        ) : (
-                          <Link
-                            href={`/commercial/customers/${customer.id}/invoices/${item.reference}`}
-                            className={
-                              credit
-                                ? "text-red-700 hover:text-red-800 hover:underline"
-                                : "text-slate-950 hover:text-amber-600 hover:underline"
-                            }
-                          >
-                            {
-                              item.reference
-                            }
-                          </Link>
-                        )}
-                      </td>
+                    <td
+                      className={`px-6 py-4 text-right font-semibold ${
+                        credit
+                          ? "text-red-700"
+                          : cancelled
+                          ? "text-slate-600"
+                          : "text-slate-950"
+                      }`}
+                    >
+                      {formatMoney(item.value)}
+                    </td>
+                  </tr>
+                );
+              })}
 
-                      <td
-                        className={`px-6 py-4 text-right font-semibold ${
-                          credit
-                            ? "text-red-700"
-                            : cancelled
-                            ? "text-slate-600"
-                            : "text-slate-950"
-                        }`}
-                      >
-                        {formatMoney(
-                          item.value
-                        )}
-                      </td>
-                    </tr>
-                  );
-                }
-              )}
-
-              {paginatedActivity.length ===
-                0 && (
+              {paginatedActivity.length === 0 && (
                 <tr>
                   <td
                     colSpan={4}
                     className="px-6 py-8 text-center text-sm text-slate-500"
                   >
-                    No activity was found for this filter.
+                    No activity was found for this filter and date range.
                   </td>
                 </tr>
               )}
@@ -3726,25 +4053,19 @@ for (const alias of productAliases) {
           </table>
         </div>
 
-        {totalActivityPages >
-          1 && (
+        {totalActivityPages > 1 && (
           <div className="flex items-center justify-between border-t px-6 py-4">
             <p className="text-sm text-slate-500">
-              Page{" "}
-              {safeActivityPage} of{" "}
+              Page {safeActivityPage} of{" "}
               {totalActivityPages}
             </p>
 
             <div className="flex gap-2">
-              {safeActivityPage >
-                1 && (
+              {safeActivityPage > 1 && (
                 <Link
-                  href={`/commercial/customers/${
-                    customer.id
-                  }?activity=${activityFilter}&page=${
-                    safeActivityPage -
-                    1
-                  }#recent-sales-activity`}
+                  href={activityHref({
+                    page: safeActivityPage - 1,
+                  })}
                   className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                 >
                   Previous
@@ -3754,12 +4075,9 @@ for (const alias of productAliases) {
               {safeActivityPage <
                 totalActivityPages && (
                 <Link
-                  href={`/commercial/customers/${
-                    customer.id
-                  }?activity=${activityFilter}&page=${
-                    safeActivityPage +
-                    1
-                  }#recent-sales-activity`}
+                  href={activityHref({
+                    page: safeActivityPage + 1,
+                  })}
                   className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                 >
                   Next

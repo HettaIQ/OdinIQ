@@ -31,6 +31,9 @@ model Company {
   customerAccountAliases  CustomerAccountAlias[]
   productCostHistories    ProductCostHistory[]
   productAliases          ProductAlias[]
+  territories             Territory[]
+  customerBranches        CustomerBranch[]
+  territoryAgentHistories TerritoryAgentHistory[]
 }
 
 model User {
@@ -91,6 +94,8 @@ model CompanyMembership {
   quoterQuotes            Quote[]                 @relation("QuoteQuoter")
   agentHistory            CustomerAgentHistory[]
   agentAliases            AgentAlias[]
+  territoryAgentHistory   TerritoryAgentHistory[]
+  branchAgentOverrides    CustomerBranch[] @relation("CustomerBranchAgentOverride")
 
   @@unique([userId, companyId])
   @@index([companyId])
@@ -165,6 +170,7 @@ model Customer {
   buyingGroupHistory      CustomerBuyingGroupHistory[]
   aliases                 CustomerAccountAlias[]
   commercialAgreements    CommercialAgreement[]
+  branches                CustomerBranch[]
 
   @@unique([companyId, accountCode])
   @@index([companyId])
@@ -173,6 +179,100 @@ model Customer {
   @@index([parentCustomerId])
 }
 
+model Territory {
+  id Int @id @default(autoincrement())
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  name        String
+  code        String?
+  description String?
+  active      Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  branches     CustomerBranch[]
+  agentHistory TerritoryAgentHistory[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@index([companyId, active])
+}
+
+model CustomerBranch {
+  id Int @id @default(autoincrement())
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  customerId Int
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  branchName String
+  branchCode String?
+
+  addressLine1 String?
+  addressLine2 String?
+  addressLine3 String?
+  town         String?
+  county       String?
+  postcode     String?
+
+  buyingGroup String?
+  source      String?
+  externalReference String?
+
+  territoryId Int?
+  territory   Territory? @relation(fields: [territoryId], references: [id], onDelete: SetNull)
+
+  agentOverrideMembershipId Int?
+  agentOverride             CompanyMembership? @relation("CustomerBranchAgentOverride", fields: [agentOverrideMembershipId], references: [id], onDelete: SetNull)
+
+  active Boolean @default(true)
+  notes  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, customerId, branchName])
+  @@index([companyId])
+  @@index([customerId])
+  @@index([territoryId])
+  @@index([agentOverrideMembershipId])
+  @@index([postcode])
+  @@index([buyingGroup])
+}
+
+model TerritoryAgentHistory {
+  id Int @id @default(autoincrement())
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  territoryId Int
+  territory   Territory @relation(fields: [territoryId], references: [id], onDelete: Cascade)
+
+  membershipId Int?
+  membership   CompanyMembership? @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+
+  agentName String
+
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([territoryId])
+  @@index([membershipId])
+  @@index([effectiveFrom])
+  @@index([territoryId, effectiveFrom])
+}
 model CustomerCommercialCost {
   id Int @id @default(autoincrement())
 
@@ -825,3 +925,4 @@ model SalesInvoiceLine {
   @@index([salesInvoiceId])
   @@index([stockCode])
 }
+
