@@ -95,7 +95,7 @@ model CompanyMembership {
   agentHistory            CustomerAgentHistory[]
   agentAliases            AgentAlias[]
   territoryAgentHistory   TerritoryAgentHistory[]
-  branchAgentOverrides    CustomerBranch[] @relation("CustomerBranchAgentOverride")
+  branchAgentOverrides    CustomerBranch[]        @relation("CustomerBranchAgentOverride")
 
   @@unique([userId, companyId])
   @@index([companyId])
@@ -220,8 +220,8 @@ model CustomerBranch {
   county       String?
   postcode     String?
 
-  buyingGroup String?
-  source      String?
+  buyingGroup       String?
+  source            String?
   externalReference String?
 
   territoryId Int?
@@ -273,6 +273,7 @@ model TerritoryAgentHistory {
   @@index([effectiveFrom])
   @@index([territoryId, effectiveFrom])
 }
+
 model CustomerCommercialCost {
   id Int @id @default(autoincrement())
 
@@ -898,18 +899,39 @@ model SalesOrder {
   investigatedBy      String?
   investigatedAt      DateTime?
 
-    warehouseStatus      String    @default("ORDER_RECEIVED")
-    warehouseStatusBy    String?
-    warehouseStatusAt    DateTime?
-    warehouseNote        String?
+  warehouseStatus   String    @default("ORDER_RECEIVED")
+  warehouseStatusBy String?
+  warehouseStatusAt DateTime?
+  warehouseNote     String?
 
-  importedAt DateTime @default(now())
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  importedAt      DateTime                   @default(now())
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
+  warehousePhotos SalesOrderWarehousePhoto[]
 
   @@unique([companyId, salesOrderNumber])
   @@index([companyId, customerAccountCode])
   @@index([companyId, orderDate])
+}
+
+model SalesOrderWarehousePhoto {
+  id Int @id @default(autoincrement())
+
+  salesOrderId Int
+  salesOrder   SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+
+  fileName     String
+  originalName String
+  fileType     String
+  fileSize     Int
+
+  warehouseStage String
+  note           String?
+  uploadedBy     String?
+  uploadedAt     DateTime @default(now())
+
+  @@index([salesOrderId])
+  @@index([uploadedAt])
 }
 
 model SalesInvoiceLine {
@@ -930,4 +952,3 @@ model SalesInvoiceLine {
   @@index([salesInvoiceId])
   @@index([stockCode])
 }
-
