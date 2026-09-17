@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { requireAuth } from "@/lib/auth/requireAuth";
 import { prisma } from "@/lib/prisma";
+import WarehousePhotoUpload from "./WarehousePhotoUpload";
 
 type PageProps = {
   params: Promise<{
@@ -152,11 +153,18 @@ export default async function SalesOrderDetailPage({
   const { salesOrderNumber } = await params;
 
   const salesOrder = await prisma.salesOrder.findFirst({
-    where: {
-      companyId: membership.companyId,
-      salesOrderNumber,
+  where: {
+    companyId: membership.companyId,
+    salesOrderNumber,
+  },
+  include: {
+    warehousePhotos: {
+      orderBy: {
+        uploadedAt: "desc",
+      },
     },
-  });
+  },
+});
 
   if (!salesOrder) {
     notFound();
@@ -551,7 +559,103 @@ export default async function SalesOrderDetailPage({
         </form>
       </section>
 
-      <section className="mt-6 rounded-2xl border bg-white p-6 shadow-sm">
+             <WarehousePhotoUpload
+          salesOrderNumber={salesOrder.salesOrderNumber}
+          disabled={status === "CANCELLED"}
+        />
+
+        {salesOrder.warehousePhotos.length > 0 && (
+          <section className="mt-6 rounded-2xl border bg-white p-6 shadow-sm">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-wide text-amber-600">
+                Evidence
+              </p>
+
+              <h2 className="mt-1 text-xl font-bold text-slate-950">
+                Warehouse Photos
+              </h2>
+
+              <p className="mt-1 text-sm text-slate-500">
+                Photos recorded against this Sales Order during warehouse
+                processing.
+              </p>
+            </div>
+
+            <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {salesOrder.warehousePhotos.map((photo) => {
+                const photoUrl = `/uploads/warehouse/${salesOrder.id}/${photo.fileName}`;
+
+                const stageLabel =
+                  warehouseStages.find(
+                    (stage) =>
+                      stage.value === photo.warehouseStage
+                  )?.label ?? photo.warehouseStage;
+
+                return (
+                  <div
+                    key={photo.id}
+                    className="overflow-hidden rounded-xl border border-slate-200 bg-white"
+                  >
+                    <a
+                      href={photoUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block bg-slate-100"
+                    >
+                      <img
+                        src={photoUrl}
+                        alt={
+                          photo.note ||
+                          `Warehouse evidence for Sales Order ${salesOrder.salesOrderNumber}`
+                        }
+                        className="h-56 w-full object-cover"
+                      />
+                    </a>
+
+                    <div className="p-4">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                          {stageLabel}
+                        </span>
+
+                        <span className="text-xs text-slate-500">
+                          {new Intl.DateTimeFormat("en-GB", {
+                            dateStyle: "medium",
+                            timeStyle: "short",
+                          }).format(photo.uploadedAt)}
+                        </span>
+                      </div>
+
+                      {photo.note && (
+                        <p className="mt-3 text-sm font-medium text-slate-800">
+                          {photo.note}
+                        </p>
+                      )}
+
+                      <p className="mt-2 text-xs text-slate-500">
+                        Uploaded by{" "}
+                        <span className="font-semibold text-slate-700">
+                          {photo.uploadedBy ?? "Unknown"}
+                        </span>
+                      </p>
+
+                      <a
+                        href={photoUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-3 inline-block text-sm font-semibold text-amber-700 hover:text-amber-800"
+                      >
+                        View full photo
+                      </a>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        <section className="mt-6 rounded-2xl border bg-white p-6 shadow-sm">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-xl font-bold text-slate-950">
