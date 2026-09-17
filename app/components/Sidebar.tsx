@@ -32,7 +32,7 @@ export default async function Sidebar() {
   { href: "/settings", label: "Settings" },
 ];
   return (
-    <aside className="flex w-64 flex-col border-r border-slate-800 bg-slate-950 text-white">
+    <aside className="hidden w-64 flex-col border-r border-slate-800 bg-slate-950 text-white lg:flex">
       <div className="border-b border-slate-800 px-6 py-6">
         <p className="text-2xl font-bold tracking-tight">
           Odin<span className="text-amber-400">IQ</span>

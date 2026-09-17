@@ -25,7 +25,7 @@ export default async function ProtectedLayout({
           companyName={membership?.company.name ?? "No company assigned"}
         />
 
-        <main className="flex-1 overflow-x-hidden p-8">
+        <main className="flex-1 overflow-x-hidden p-4 sm:p-6 lg:p-8">
           {children}
         </main>
       </div>

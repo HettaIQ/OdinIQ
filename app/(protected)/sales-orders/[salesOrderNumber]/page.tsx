@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { requireAuth } from "@/lib/auth/requireAuth";
 import { prisma } from "@/lib/prisma";
 import WarehousePhotoUpload from "./WarehousePhotoUpload";
+import SalesOrderQrCode from "./SalesOrderQrCode";
 
 type PageProps = {
   params: Promise<{
@@ -335,7 +336,7 @@ export default async function SalesOrderDetailPage({
   }
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-8">
+    <main className="mx-auto max-w-6xl px-0 py-4 sm:px-4 sm:py-6 lg:px-6 lg:py-8">
       <Link
         href="/despatch-audit"
         className="text-sm font-semibold text-amber-600 hover:text-amber-700"
@@ -343,7 +344,7 @@ export default async function SalesOrderDetailPage({
         ← Back to Despatch & Invoice Audit
       </Link>
 
-      <div className="mt-6 flex items-start justify-between gap-6">
+      <div className="mt-6 flex flex-col gap-4 md:flex-row md:items-start md:justify-between md:gap-6">
         <div>
           <p className="text-sm font-semibold uppercase tracking-wide text-amber-600">
             Sales Order Audit
@@ -556,10 +557,16 @@ export default async function SalesOrderDetailPage({
               together.
             </p>
           </div>
-        </form>
-      </section>
+                  </form>
 
-             <WarehousePhotoUpload
+          <div className="mt-6">
+            <SalesOrderQrCode
+              salesOrderNumber={salesOrder.salesOrderNumber}
+            />
+          </div>
+        </section>
+
+        <WarehousePhotoUpload
           salesOrderNumber={salesOrder.salesOrderNumber}
           disabled={status === "CANCELLED"}
         />
