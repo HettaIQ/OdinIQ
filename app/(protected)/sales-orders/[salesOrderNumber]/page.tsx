@@ -56,6 +56,89 @@ async function updateInvestigation(formData: FormData) {
   revalidatePath("/despatch-audit");
 }
 
+
+async function updateWarehouse(formData: FormData) {
+  "use server";
+
+  const user = await requireAuth();
+  const membership = user.memberships[0];
+
+  if (!membership) {
+    throw new Error("No active company membership found.");
+  }
+
+  const salesOrderNumber = String(
+    formData.get("salesOrderNumber") ?? ""
+  ).trim();
+
+  const warehouseStatus = String(
+    formData.get("warehouseStatus") ?? ""
+  ).trim();
+
+  const warehouseNote = String(
+    formData.get("warehouseNote") ?? ""
+  ).trim();
+
+  const allowedStatuses = [
+    "ORDER_RECEIVED",
+    "PICKING",
+    "PACKING",
+    "READY_TO_DESPATCH",
+    "DESPATCHED",
+  ];
+
+  if (!salesOrderNumber) {
+    throw new Error("Sales Order number is required.");
+  }
+
+  if (!allowedStatuses.includes(warehouseStatus)) {
+    throw new Error("Invalid warehouse status.");
+  }
+
+const existingOrder = await prisma.salesOrder.findFirst({
+  where: {
+    companyId: membership.companyId,
+    salesOrderNumber,
+  },
+});
+
+if (!existingOrder) {
+  throw new Error("Sales Order not found.");
+}
+
+const cancelledInvoice = await prisma.salesInvoice.findFirst({
+  where: {
+    companyId: membership.companyId,
+    salesOrderNumber,
+    customerOrderNumber: "cancelled",
+  },
+});
+
+if (cancelledInvoice) {
+  throw new Error(
+    "Warehouse progression is locked because this Sales Order is cancelled."
+  );
+}
+
+  await prisma.salesOrder.update({
+    where: {
+      companyId_salesOrderNumber: {
+        companyId: membership.companyId,
+        salesOrderNumber,
+      },
+    },
+    data: {
+      warehouseStatus,
+      warehouseNote: warehouseNote || null,
+      warehouseStatusBy: user.name,
+      warehouseStatusAt: new Date(),
+    },
+  });
+
+  revalidatePath(`/sales-orders/${salesOrderNumber}`);
+  revalidatePath("/despatch-audit");
+}
+
 export default async function SalesOrderDetailPage({
   params,
 }: PageProps) {
@@ -170,6 +253,22 @@ export default async function SalesOrderDetailPage({
   } else {
     status = "INVOICED";
   }
+
+
+  const warehouseStages = [
+    { value: "ORDER_RECEIVED", label: "Order Received" },
+    { value: "PICKING", label: "Picking" },
+    { value: "PACKING", label: "Packing" },
+    { value: "READY_TO_DESPATCH", label: "Ready to Despatch" },
+    { value: "DESPATCHED", label: "Despatched" },
+  ] as const;
+
+  const currentWarehouseIndex = Math.max(
+    0,
+    warehouseStages.findIndex(
+      (stage) => stage.value === salesOrder.warehouseStatus
+    )
+  );
 
   function formatDate(value: Date | null) {
     if (!value) {
@@ -316,6 +415,141 @@ export default async function SalesOrderDetailPage({
           </>
         )}
       </div>
+
+
+      <section className="mt-6 rounded-2xl border bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-wide text-amber-600">
+              Warehouse
+            </p>
+            <h2 className="mt-1 text-xl font-bold text-slate-950">
+              Warehouse Progress
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Track the physical progress of this order separately from the Sage
+              despatch and invoice audit.
+            </p>
+          </div>
+
+          {salesOrder.warehouseStatusAt && (
+            <div className="text-right text-xs text-slate-500">
+              <p>
+                Last updated by{" "}
+                <span className="font-semibold text-slate-700">
+                  {salesOrder.warehouseStatusBy ?? "Unknown"}
+                </span>
+              </p>
+              <p>
+                {new Intl.DateTimeFormat("en-GB", {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                }).format(salesOrder.warehouseStatusAt)}
+              </p>
+            </div>
+          )}
+        </div>
+
+{status === "CANCELLED" && (
+  <div className="mt-5 rounded-xl border border-slate-300 bg-slate-50 p-4">
+    <p className="font-semibold text-slate-700">
+      Warehouse progression locked
+    </p>
+    <p className="mt-1 text-sm text-slate-600">
+      This Sales Order is cancelled in Sage and cannot be progressed
+      through the warehouse.
+    </p>
+  </div>
+)}
+
+        <form action={updateWarehouse} className="mt-6">
+          <input
+            type="hidden"
+            name="salesOrderNumber"
+            value={salesOrder.salesOrderNumber}
+          />
+
+          <div className="grid gap-3 md:grid-cols-5">
+            {warehouseStages.map((stage, index) => {
+              const isCurrent =
+                stage.value === salesOrder.warehouseStatus;
+              const isComplete = index < currentWarehouseIndex;
+
+              return (
+                <button
+                  key={stage.value}
+                  type="submit"
+                  name="warehouseStatus"
+                  value={stage.value}
+                  disabled={status === "CANCELLED"}
+                  className={`rounded-xl border px-4 py-4 text-left transition ${
+                    isCurrent
+                      ? "border-amber-500 bg-amber-50 ring-2 ring-amber-200"
+                      : isComplete
+                        ? "border-emerald-200 bg-emerald-50 hover:border-emerald-300"
+                        : "border-slate-200 bg-white hover:border-amber-300 hover:bg-amber-50"
+                 } disabled:cursor-not-allowed disabled:opacity-50`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
+                        isCurrent
+                          ? "bg-amber-500 text-white"
+                          : isComplete
+                            ? "bg-emerald-600 text-white"
+                            : "bg-slate-100 text-slate-500"
+                      }`}
+                    >
+                      {isComplete ? "✓" : index + 1}
+                    </span>
+
+                    <span
+                      className={`text-sm font-semibold ${
+                        isCurrent
+                          ? "text-amber-800"
+                          : isComplete
+                            ? "text-emerald-800"
+                            : "text-slate-700"
+                      }`}
+                    >
+                      {stage.label}
+                    </span>
+                  </div>
+
+                  {isCurrent && (
+                    <p className="mt-2 text-xs font-semibold text-amber-700">
+                      Current stage
+                    </p>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-5">
+            <label
+              htmlFor="warehouseNote"
+              className="block text-sm font-semibold text-slate-700"
+            >
+              Warehouse note
+            </label>
+
+            <textarea
+              id="warehouseNote"
+              name="warehouseNote"
+              defaultValue={salesOrder.warehouseNote ?? ""}
+              rows={3}
+              placeholder="Add packing, stock, delivery or warehouse information..."
+              className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+
+            <p className="mt-2 text-xs text-slate-500">
+              Choose a warehouse stage above to save the stage and this note
+              together.
+            </p>
+          </div>
+        </form>
+      </section>
 
       <section className="mt-6 rounded-2xl border bg-white p-6 shadow-sm">
         <div className="flex items-start justify-between gap-4">
