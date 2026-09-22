@@ -2,21 +2,35 @@
 
 import { revalidatePath } from "next/cache";
 
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
 import { prisma } from "@/lib/prisma";
 
 export async function completeTask(taskId: number) {
-  const user = await requireAuth();
-  const membership = user.memberships[0];
+  const {
+    user,
+    membership,
+    companyId,
+  } = await requireCompanyContext();
 
-  if (!membership) {
-    throw new Error("No active company membership found.");
+  const canCompleteTasks =
+    user.platformRole === "SUPER_ADMIN" ||
+    Boolean(
+      membership.role?.permissions.some(
+        ({ permission }) =>
+          permission.key === "tasks.complete"
+      )
+    );
+
+  if (!canCompleteTasks) {
+    throw new Error(
+      "You do not have permission to complete commercial tasks."
+    );
   }
 
   const task = await prisma.commercialTask.findFirst({
     where: {
       id: taskId,
-      companyId: membership.companyId,
+      companyId,
       status: "OPEN",
     },
     include: {
@@ -61,22 +75,34 @@ export async function completeTask(taskId: number) {
 export async function createTaskFromVoiceNote(voiceNoteId: number) {
   "use server";
 
-  const user = await requireAuth();
+    const {
+    user,
+    membership,
+    companyId,
+  } = await requireCompanyContext();
 
-  const membership = await prisma.companyMembership.findFirst({
-    where: {
-      userId: user.id,
-    },
-  });
+  const canCreateTasks =
+    user.platformRole === "SUPER_ADMIN" ||
+    Boolean(
+      membership.role?.permissions.some(
+        ({ permission }) =>
+          permission.key === "tasks.create"
+      )
+    );
 
-  if (!membership) {
-    throw new Error("Company membership not found.");
-  }
+  const canCreateOpportunities =
+    user.platformRole === "SUPER_ADMIN" ||
+    Boolean(
+      membership.role?.permissions.some(
+        ({ permission }) =>
+          permission.key === "opportunities.create"
+      )
+    );
 
   const voiceNote = await prisma.customerVoiceNote.findFirst({
     where: {
       id: voiceNoteId,
-      companyId: membership.companyId,
+      companyId,
     },
   });
 
@@ -90,17 +116,23 @@ export async function createTaskFromVoiceNote(voiceNoteId: number) {
 
   const existingTask = await prisma.commercialTask.findFirst({
     where: {
-      companyId: membership.companyId,
+      companyId,
       customerId: voiceNote.customerId,
       title: voiceNote.suggestedTaskTitle,
       status: "OPEN",
     },
   });
 
-  if (!existingTask) {
+    if (!existingTask) {
+    if (!canCreateTasks) {
+      throw new Error(
+        "You do not have permission to create commercial tasks."
+      );
+    }
+
     await prisma.commercialTask.create({
       data: {
-        companyId: membership.companyId,
+        companyId,
         customerId: voiceNote.customerId,
         assignedMembershipId: membership.id,
         title: voiceNote.suggestedTaskTitle,
@@ -129,17 +161,23 @@ if (voiceNote.opportunitySummary) {
   const existingOpportunity =
     await prisma.commercialOpportunity.findFirst({
       where: {
-        companyId: membership.companyId,
+        companyId,
         customerId: voiceNote.customerId,
         title: voiceNote.opportunitySummary,
         status: "OPEN",
       },
     });
 
-  if (!existingOpportunity) {
+    if (!existingOpportunity) {
+    if (!canCreateOpportunities) {
+      throw new Error(
+        "You do not have permission to create commercial opportunities."
+      );
+    }
+
     await prisma.commercialOpportunity.create({
       data: {
-        companyId: membership.companyId,
+        companyId,
         customerId: voiceNote.customerId,
         ownerMembershipId: membership.id,
         title: voiceNote.opportunitySummary,
@@ -168,3 +206,4 @@ if (voiceNote.opportunitySummary) {
     
 
  
+

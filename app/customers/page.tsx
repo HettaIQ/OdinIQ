@@ -1,4 +1,4 @@
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 
@@ -12,22 +12,17 @@ type PageProps = {
 export default async function CustomersPage({
   searchParams,
 }: PageProps) {
-  const user = await requireAuth();
-  const membership = user.memberships[0];
+  const {
+    membership,
+    companyId,
+  } = await requireCompanyContext();
   const isSalesAgent = membership.role?.name === "Sales Agent";
   const { q } = await searchParams;
 const search = String(q ?? "").trim();
 
-  if (!membership) {
-    return (
-      <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-800">
-        No active company membership was found for this account.
-      </div>
-    );
-  }
   const customers = await prisma.customer.findMany({
 where: {
-  companyId: membership.companyId,
+  companyId: companyId,
 
   ...(isSalesAgent
     ? {
@@ -239,3 +234,4 @@ where: {
     </div>
   );
 }
+

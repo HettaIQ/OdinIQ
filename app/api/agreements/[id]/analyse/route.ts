@@ -5,7 +5,7 @@ import OpenAI from "openai";
 import { PDFParse } from "pdf-parse";
 
 import { prisma } from "@/lib/prisma";
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { getApiCompanyContext } from "@/lib/auth/getApiCompanyContext";
 
 export const runtime = "nodejs";
 
@@ -24,18 +24,38 @@ export async function POST(
   context: RouteContext
 ) {
   try {
-    const user = await requireAuth();
+    const companyContext =
+  await getApiCompanyContext();
 
-    const membership = user.memberships[0];
+if (
+  companyContext.status ===
+  "UNAUTHENTICATED"
+) {
+  return NextResponse.json(
+    {
+      error:
+        "You must be signed in.",
+    },
+    { status: 401 }
+  );
+}
 
-    if (!membership) {
-      return NextResponse.json(
-        {
-          error: "No active company membership was found.",
-        },
-        { status: 403 }
-      );
-    }
+if (
+  companyContext.status ===
+  "NO_COMPANY"
+) {
+  return NextResponse.json(
+    {
+      error:
+        "No active company membership was found.",
+    },
+    { status: 403 }
+  );
+}
+
+const {
+  companyId,
+} = companyContext;
 
     const { id } = await context.params;
     const agreementId = Number(id);
@@ -51,9 +71,9 @@ export async function POST(
 
     const agreement = await prisma.commercialAgreement.findFirst({
       where: {
-        id: agreementId,
-        companyId: membership.companyId,
-      },
+  id: agreementId,
+  companyId,
+},
       include: {
         documents: {
           orderBy: {

@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import crypto from "crypto";
 
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { getApiCompanyContext } from "@/lib/auth/getApiCompanyContext";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -19,80 +19,173 @@ export async function POST(
   context: RouteContext
 ) {
   try {
-    const user = await requireAuth();
-    const membership = user.memberships[0];
+    const companyContext =
+      await getApiCompanyContext();
 
-    if (!membership) {
+    if (
+      companyContext.status ===
+      "UNAUTHENTICATED"
+    ) {
       return NextResponse.json(
         {
           success: false,
-          message: "No active company membership found.",
+          message:
+            "You must be signed in.",
         },
-        { status: 403 }
+        {
+          status: 401,
+        }
       );
     }
 
-    const { salesOrderNumber: rawSalesOrderNumber } =
-      await context.params;
+    if (
+      companyContext.status ===
+      "NO_COMPANY"
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "No active company membership found.",
+        },
+        {
+          status: 403,
+        }
+      );
+    }
+
+    const {
+      user,
+      membership,
+      companyId,
+    } = companyContext;
+
+    /*
+     * Warehouse evidence can only be uploaded
+     * by users who have the stock.dispatch
+     * permission for the currently selected
+     * company.
+     *
+     * SUPER_ADMIN retains platform-level access.
+     */
+    const canDispatchStock =
+      user.platformRole === "SUPER_ADMIN" ||
+      Boolean(
+        membership.role?.permissions.some(
+          ({ permission }) =>
+            permission.key ===
+            "stock.dispatch"
+        )
+      );
+
+    if (!canDispatchStock) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "You do not have permission to upload warehouse evidence.",
+        },
+        {
+          status: 403,
+        }
+      );
+    }
+
+    const {
+      salesOrderNumber:
+        rawSalesOrderNumber,
+    } = await context.params;
 
     const salesOrderNumber =
-      decodeURIComponent(rawSalesOrderNumber).trim();
+      decodeURIComponent(
+        rawSalesOrderNumber
+      ).trim();
 
     if (!salesOrderNumber) {
       return NextResponse.json(
         {
           success: false,
-          message: "Sales Order number is required.",
+          message:
+            "Sales Order number is required.",
         },
-        { status: 400 }
+        {
+          status: 400,
+        }
       );
     }
 
-    const salesOrder = await prisma.salesOrder.findUnique({
-      where: {
-        companyId_salesOrderNumber: {
-          companyId: membership.companyId,
-          salesOrderNumber,
+    /*
+     * The Sales Order must belong to the
+     * currently selected OdinIQ company.
+     *
+     * The compound key prevents an order from
+     * another tenant being used as the target
+     * for this warehouse upload.
+     */
+    const salesOrder =
+      await prisma.salesOrder.findUnique({
+        where: {
+          companyId_salesOrderNumber: {
+            companyId,
+            salesOrderNumber,
+          },
         },
-      },
-      select: {
-        id: true,
-        salesOrderNumber: true,
-        warehouseStatus: true,
-      },
-    });
+        select: {
+          id: true,
+          salesOrderNumber:
+            true,
+          warehouseStatus:
+            true,
+        },
+      });
 
     if (!salesOrder) {
       return NextResponse.json(
         {
           success: false,
-          message: "Sales Order not found.",
+          message:
+            "Sales Order not found.",
         },
-        { status: 404 }
+        {
+          status: 404,
+        }
       );
     }
 
-    const formData = await request.formData();
+    const formData =
+      await request.formData();
 
-    const file = formData.get("file");
-    const note = String(
-      formData.get("note") ?? ""
-    ).trim();
+    const file =
+      formData.get("file");
+
+    const note =
+      String(
+        formData.get("note") ??
+          ""
+      ).trim();
 
     if (!(file instanceof File)) {
       return NextResponse.json(
         {
           success: false,
-          message: "No photo was supplied.",
+          message:
+            "No photo was supplied.",
         },
-        { status: 400 }
+        {
+          status: 400,
+        }
       );
     }
 
-    const originalName = file.name;
-    const extension = path
-      .extname(originalName)
-      .toLowerCase();
+    const originalName =
+      file.name;
+
+    const extension =
+      path
+        .extname(
+          originalName
+        )
+        .toLowerCase();
 
     const allowedExtensions = [
       ".jpg",
@@ -108,8 +201,12 @@ export async function POST(
     ];
 
     if (
-      !allowedExtensions.includes(extension) ||
-      !allowedMimeTypes.includes(file.type)
+      !allowedExtensions.includes(
+        extension
+      ) ||
+      !allowedMimeTypes.includes(
+        file.type
+      )
     ) {
       return NextResponse.json(
         {
@@ -117,50 +214,67 @@ export async function POST(
           message:
             "Only JPG, JPEG, PNG and WebP photos are supported.",
         },
-        { status: 400 }
+        {
+          status: 400,
+        }
       );
     }
 
-    const maximumSize = 20 * 1024 * 1024;
+    const maximumSize =
+      20 * 1024 * 1024;
 
-    if (file.size > maximumSize) {
+    if (
+      file.size >
+      maximumSize
+    ) {
       return NextResponse.json(
         {
           success: false,
           message:
             "The maximum photo size is 20 MB.",
         },
-        { status: 400 }
+        {
+          status: 400,
+        }
       );
     }
 
     const storedFileName =
       `${crypto.randomUUID()}${extension}`;
 
-    const relativeDirectory = path.join(
-      "uploads",
-      "warehouse",
-      String(salesOrder.id)
-    );
+    const relativeDirectory =
+      path.join(
+        "uploads",
+        "warehouse",
+        String(
+          salesOrder.id
+        )
+      );
 
-    const absoluteDirectory = path.join(
-      process.cwd(),
-      "public",
-      relativeDirectory
-    );
+    const absoluteDirectory =
+      path.join(
+        process.cwd(),
+        "public",
+        relativeDirectory
+      );
 
-    await mkdir(absoluteDirectory, {
-      recursive: true,
-    });
-
-    const absoluteFilePath = path.join(
+    await mkdir(
       absoluteDirectory,
-      storedFileName
+      {
+        recursive: true,
+      }
     );
 
-    const buffer = Buffer.from(
-      await file.arrayBuffer()
-    );
+    const absoluteFilePath =
+      path.join(
+        absoluteDirectory,
+        storedFileName
+      );
+
+    const buffer =
+      Buffer.from(
+        await file.arrayBuffer()
+      );
 
     await writeFile(
       absoluteFilePath,
@@ -170,32 +284,51 @@ export async function POST(
     const photo =
       await prisma.salesOrderWarehousePhoto.create({
         data: {
-          salesOrderId: salesOrder.id,
-          fileName: storedFileName,
+          salesOrderId:
+            salesOrder.id,
+
+          fileName:
+            storedFileName,
+
           originalName,
-          fileType: file.type,
-          fileSize: file.size,
+
+          fileType:
+            file.type,
+
+          fileSize:
+            file.size,
+
           warehouseStage:
             salesOrder.warehouseStatus,
-          note: note || null,
-          uploadedBy: user.name,
+
+          note:
+            note || null,
+
+          uploadedBy:
+            user.name,
         },
       });
 
-    const fileUrl = `/${relativeDirectory.replaceAll(
-      "\\",
-      "/"
-    )}/${storedFileName}`;
+    const fileUrl =
+      `/${relativeDirectory.replaceAll(
+        "\\",
+        "/"
+      )}/${storedFileName}`;
 
     return NextResponse.json(
       {
         success: true,
+
         message:
           "Warehouse photo uploaded successfully.",
+
         photo,
+
         fileUrl,
       },
-      { status: 201 }
+      {
+        status: 201,
+      }
     );
   } catch (error) {
     console.error(
@@ -206,14 +339,18 @@ export async function POST(
     return NextResponse.json(
       {
         success: false,
+
         message:
           "The warehouse photo could not be uploaded.",
+
         error:
           error instanceof Error
             ? error.message
             : "Unknown upload error.",
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 }

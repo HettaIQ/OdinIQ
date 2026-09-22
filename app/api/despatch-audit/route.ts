@@ -1,21 +1,46 @@
 import { NextResponse } from "next/server";
 
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { getApiCompanyContext } from "@/lib/auth/getApiCompanyContext";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
   try {
-    const user = await requireAuth();
-    const membership = user.memberships[0];
+    const companyContext =
+      await getApiCompanyContext();
 
-    if (!membership) {
+    if (
+      companyContext.status ===
+      "UNAUTHENTICATED"
+    ) {
       return NextResponse.json(
-        { error: "No active company membership found." },
-        { status: 403 }
+        {
+          error:
+            "You must be signed in.",
+        },
+        {
+          status: 401,
+        }
       );
     }
 
-    const companyId = membership.companyId;
+    if (
+      companyContext.status ===
+      "NO_COMPANY"
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "No active company membership found.",
+        },
+        {
+          status: 403,
+        }
+      );
+    }
+
+    const {
+      companyId,
+    } = companyContext;
 
     /*
      * Find the latest Sales Order import batch first.
@@ -23,7 +48,9 @@ export async function GET() {
      */
     const latestSalesOrderBatch =
       await prisma.salesOrder.aggregate({
-        where: { companyId },
+        where: {
+          companyId,
+        },
         _max: {
           importedAt: true,
         },
@@ -48,18 +75,25 @@ export async function GET() {
         ? prisma.salesOrder.findMany({
             where: {
               companyId,
-              importedAt: latestImportedAt,
+              importedAt:
+                latestImportedAt,
             },
             select: {
-              salesOrderNumber: true,
+              salesOrderNumber:
+                true,
               orderDate: true,
-              customerAccountCode: true,
+              customerAccountCode:
+                true,
               customerName: true,
               orderValue: true,
-              investigationStatus: true,
-              investigationNote: true,
-              investigatedBy: true,
-              investigatedAt: true,
+              investigationStatus:
+                true,
+              investigationNote:
+                true,
+              investigatedBy:
+                true,
+              investigatedAt:
+                true,
             },
             orderBy: {
               orderDate: "desc",
@@ -68,7 +102,9 @@ export async function GET() {
         : Promise.resolve([]),
 
       prisma.goodsDespatchNote.findMany({
-        where: { companyId },
+        where: {
+          companyId,
+        },
         select: {
           gdnNumber: true,
           salesOrderNumber: true,
@@ -76,18 +112,24 @@ export async function GET() {
       }),
 
       prisma.salesInvoice.findMany({
-        where: { companyId },
+        where: {
+          companyId,
+        },
         select: {
           invoiceNumber: true,
           invoiceType: true,
           salesOrderNumber: true,
-          customerOrderNumber: true,
-          customerAccountCode: true,
+          customerOrderNumber:
+            true,
+          customerAccountCode:
+            true,
         },
       }),
 
       prisma.customer.findMany({
-        where: { companyId },
+        where: {
+          companyId,
+        },
         select: {
           accountCode: true,
           name: true,
@@ -95,14 +137,18 @@ export async function GET() {
       }),
 
       prisma.goodsDespatchNote.aggregate({
-        where: { companyId },
+        where: {
+          companyId,
+        },
         _max: {
           importedAt: true,
         },
       }),
 
       prisma.salesInvoice.aggregate({
-        where: { companyId },
+        where: {
+          companyId,
+        },
         _max: {
           importedAt: true,
         },
@@ -115,10 +161,11 @@ export async function GET() {
      * This replaces repeatedly scanning every GDN and invoice
      * for every Sales Order.
      */
-    const gdnsBySalesOrder = new Map<
-      string,
-      string[]
-    >();
+    const gdnsBySalesOrder =
+      new Map<
+        string,
+        string[]
+      >();
 
     for (const gdn of gdns) {
       const salesOrderNumber =
@@ -129,9 +176,13 @@ export async function GET() {
       }
 
       const existing =
-        gdnsBySalesOrder.get(salesOrderNumber) ?? [];
+        gdnsBySalesOrder.get(
+          salesOrderNumber
+        ) ?? [];
 
-      existing.push(gdn.gdnNumber);
+      existing.push(
+        gdn.gdnNumber
+      );
 
       gdnsBySalesOrder.set(
         salesOrderNumber,
@@ -141,17 +192,22 @@ export async function GET() {
 
     type InvoiceMatch = {
       invoiceNumber: string;
-      customerAccountCode: string | null;
+      customerAccountCode:
+        string | null;
     };
 
-    const invoicesBySalesOrder = new Map<
-      string,
-      InvoiceMatch[]
-    >();
+    const invoicesBySalesOrder =
+      new Map<
+        string,
+        InvoiceMatch[]
+      >();
 
-    const cancelledSalesOrders = new Set<string>();
+    const cancelledSalesOrders =
+      new Set<string>();
 
-    for (const invoice of invoices) {
+    for (
+      const invoice of invoices
+    ) {
       const salesOrderNumber =
         invoice.salesOrderNumber?.trim();
 
@@ -160,9 +216,13 @@ export async function GET() {
       }
 
       const isCancelled =
-        String(invoice.customerOrderNumber ?? "")
+        String(
+          invoice.customerOrderNumber ??
+            ""
+        )
           .trim()
-          .toLowerCase() === "cancelled";
+          .toLowerCase() ===
+        "cancelled";
 
       if (isCancelled) {
         cancelledSalesOrders.add(
@@ -170,14 +230,16 @@ export async function GET() {
         );
       }
 
-      const invoiceType = String(
-        invoice.invoiceType ?? ""
-      )
-        .trim()
-        .toUpperCase();
+      const invoiceType =
+        String(
+          invoice.invoiceType ?? ""
+        )
+          .trim()
+          .toUpperCase();
 
       const isNormalInvoice =
-        !invoiceType || invoiceType === "INV";
+        !invoiceType ||
+        invoiceType === "INV";
 
       if (!isNormalInvoice) {
         continue;
@@ -189,7 +251,8 @@ export async function GET() {
         ) ?? [];
 
       existing.push({
-        invoiceNumber: invoice.invoiceNumber,
+        invoiceNumber:
+          invoice.invoiceNumber,
         customerAccountCode:
           invoice.customerAccountCode,
       });
@@ -200,128 +263,145 @@ export async function GET() {
       );
     }
 
-    const customerByName = new Map(
-      customers.map((customer) => [
-        customer.name.trim().toLowerCase(),
-        customer.accountCode,
-      ])
-    );
+    const customerByName =
+      new Map(
+        customers.map(
+          (customer) => [
+            customer.name
+              .trim()
+              .toLowerCase(),
+            customer.accountCode,
+          ]
+        )
+      );
 
     /*
      * Each Sales Order can now be resolved using constant-time
      * Map/Set lookups rather than repeatedly filtering huge arrays.
      */
-    const results = salesOrders.map(
-      (salesOrder) => {
-        const matchingGdnNumbers =
-          gdnsBySalesOrder.get(
-            salesOrder.salesOrderNumber
-          ) ?? [];
+    const results =
+      salesOrders.map(
+        (salesOrder) => {
+          const matchingGdnNumbers =
+            gdnsBySalesOrder.get(
+              salesOrder.salesOrderNumber
+            ) ?? [];
 
-        const matchingInvoices =
-          invoicesBySalesOrder.get(
-            salesOrder.salesOrderNumber
-          ) ?? [];
+          const matchingInvoices =
+            invoicesBySalesOrder.get(
+              salesOrder.salesOrderNumber
+            ) ?? [];
 
-        let status:
-          | "NOT_DESPATCHED"
-          | "DESPATCHED_NOT_INVOICED"
-          | "INVOICED"
-          | "CANCELLED";
+          let status:
+            | "NOT_DESPATCHED"
+            | "DESPATCHED_NOT_INVOICED"
+            | "INVOICED"
+            | "CANCELLED";
 
-        if (
-          cancelledSalesOrders.has(
-            salesOrder.salesOrderNumber
-          )
-        ) {
-          status = "CANCELLED";
-        } else if (
-          matchingGdnNumbers.length === 0
-        ) {
-          status = "NOT_DESPATCHED";
-        } else if (
-          matchingInvoices.length === 0
-        ) {
-          status =
-            "DESPATCHED_NOT_INVOICED";
-        } else {
-          status = "INVOICED";
-        }
+          if (
+            cancelledSalesOrders.has(
+              salesOrder.salesOrderNumber
+            )
+          ) {
+            status =
+              "CANCELLED";
+          } else if (
+            matchingGdnNumbers.length ===
+            0
+          ) {
+            status =
+              "NOT_DESPATCHED";
+          } else if (
+            matchingInvoices.length ===
+            0
+          ) {
+            status =
+              "DESPATCHED_NOT_INVOICED";
+          } else {
+            status =
+              "INVOICED";
+          }
 
-        const resolvedCustomerAccountCode =
-          salesOrder.customerAccountCode ??
-          matchingInvoices.find(
-            (invoice) =>
-              invoice.customerAccountCode
-          )?.customerAccountCode ??
-          (salesOrder.customerName
-            ? customerByName.get(
-                salesOrder.customerName
-                  .trim()
-                  .toLowerCase()
-              ) ?? null
-            : null);
-
-        return {
-          salesOrderNumber:
-            salesOrder.salesOrderNumber,
-
-          orderDate:
-            salesOrder.orderDate,
-
-          customerAccountCode:
-            resolvedCustomerAccountCode,
-
-          customerName:
-            salesOrder.customerName,
-
-          orderValue:
-            salesOrder.orderValue,
-
-          investigationStatus:
-            salesOrder.investigationStatus,
-
-          investigationNote:
-            salesOrder.investigationNote,
-
-          investigatedBy:
-            salesOrder.investigatedBy,
-
-          investigatedAt:
-            salesOrder.investigatedAt,
-
-          gdnFound:
-            matchingGdnNumbers.length > 0,
-
-          gdnNumbers:
-            matchingGdnNumbers,
-
-          invoiceFound:
-            matchingInvoices.length > 0,
-
-          invoiceNumbers:
-            matchingInvoices.map(
+          const resolvedCustomerAccountCode =
+            salesOrder.customerAccountCode ??
+            matchingInvoices.find(
               (invoice) =>
-                invoice.invoiceNumber
-            ),
+                invoice.customerAccountCode
+            )
+              ?.customerAccountCode ??
+            (salesOrder.customerName
+              ? customerByName.get(
+                  salesOrder.customerName
+                    .trim()
+                    .toLowerCase()
+                ) ?? null
+              : null);
 
-          status,
-        };
-      }
-    );
+          return {
+            salesOrderNumber:
+              salesOrder.salesOrderNumber,
+
+            orderDate:
+              salesOrder.orderDate,
+
+            customerAccountCode:
+              resolvedCustomerAccountCode,
+
+            customerName:
+              salesOrder.customerName,
+
+            orderValue:
+              salesOrder.orderValue,
+
+            investigationStatus:
+              salesOrder.investigationStatus,
+
+            investigationNote:
+              salesOrder.investigationNote,
+
+            investigatedBy:
+              salesOrder.investigatedBy,
+
+            investigatedAt:
+              salesOrder.investigatedAt,
+
+            gdnFound:
+              matchingGdnNumbers.length >
+              0,
+
+            gdnNumbers:
+              matchingGdnNumbers,
+
+            invoiceFound:
+              matchingInvoices.length >
+              0,
+
+            invoiceNumbers:
+              matchingInvoices.map(
+                (invoice) =>
+                  invoice.invoiceNumber
+              ),
+
+            status,
+          };
+        }
+      );
 
     return NextResponse.json({
       success: true,
-      totalOrders: results.length,
+      totalOrders:
+        results.length,
 
       latestSalesOrderImport:
         latestImportedAt,
 
       latestGdnImport:
-        latestGdnBatch._max.importedAt,
+        latestGdnBatch._max
+          .importedAt,
 
       latestInvoiceImport:
-        latestInvoiceBatch._max.importedAt,
+        latestInvoiceBatch._max
+          .importedAt,
 
       results,
     });
@@ -336,7 +416,9 @@ export async function GET() {
         error:
           "OdinIQ could not run the despatch audit.",
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 }

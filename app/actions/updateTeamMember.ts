@@ -2,44 +2,88 @@
 
 import { revalidatePath } from "next/cache";
 
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
 import { prisma } from "@/lib/prisma";
 
 export async function updateTeamMember(
   membershipId: number,
   formData: FormData
 ) {
-  const currentUser = await requireAuth();
-  const currentMembership = currentUser.memberships[0];
+  const {
+    user: currentUser,
+    membership,
+    companyId,
+  } = await requireCompanyContext();
 
-  if (!currentMembership) {
-    throw new Error("No active company membership found.");
+  const canManageUsers =
+    currentUser.platformRole === "SUPER_ADMIN" ||
+    Boolean(
+      membership.role?.permissions.some(
+        ({ permission }) =>
+          permission.key === "users.manage"
+      )
+    );
+
+  if (!canManageUsers) {
+    throw new Error(
+      "You do not have permission to manage team members."
+    );
   }
 
-  const member = await prisma.companyMembership.findFirst({
-    where: {
-      id: membershipId,
-      companyId: currentMembership.companyId,
-    },
-  });
+  /*
+   * The membership being edited must belong
+   * to the currently selected company.
+   */
+  const member =
+    await prisma.companyMembership.findFirst({
+      where: {
+        id: membershipId,
+        companyId,
+      },
+    });
 
   if (!member) {
-    throw new Error("Team member not found.");
+    throw new Error(
+      "Team member not found."
+    );
   }
 
-  const roleId = Number(formData.get("roleId"));
-  const agentCode = String(formData.get("agentCode") ?? "").trim();
-  const active = formData.get("active") === "true";
+  const roleId = Number(
+    formData.get("roleId")
+  );
 
-  const role = await prisma.role.findFirst({
-    where: {
-      id: roleId,
-      companyId: currentMembership.companyId,
-    },
-  });
+  const agentCode = String(
+    formData.get("agentCode") ?? ""
+  ).trim();
+
+  const active =
+    formData.get("active") === "true";
+
+  if (!Number.isInteger(roleId)) {
+    throw new Error(
+      "A valid role is required."
+    );
+  }
+
+  /*
+   * The selected role must also belong
+   * to the active company.
+   *
+   * This prevents a role ID belonging to
+   * another OdinIQ tenant being submitted.
+   */
+  const role =
+    await prisma.role.findFirst({
+      where: {
+        id: roleId,
+        companyId,
+      },
+    });
 
   if (!role) {
-    throw new Error("Role not found.");
+    throw new Error(
+      "Role not found."
+    );
   }
 
   await prisma.companyMembership.update({
@@ -48,14 +92,20 @@ export async function updateTeamMember(
     },
     data: {
       roleId: role.id,
+
       agentCode:
-        role.name === "Sales Agent" && agentCode
+        role.name === "Sales Agent" &&
+        agentCode
           ? agentCode
           : null,
+
       active,
     },
   });
 
-  revalidatePath(`/team/${member.id}`);
+  revalidatePath(
+    `/team/${member.id}`
+  );
+
   revalidatePath("/team");
 }

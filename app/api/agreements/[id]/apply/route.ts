@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+
+import { getApiCompanyContext } from "@/lib/auth/getApiCompanyContext";
 import { applyCommercialTerms } from "@/lib/odin/applyCommercialTerms";
 
 type RouteContext = {
@@ -21,11 +23,75 @@ export async function POST(
   context: RouteContext
 ) {
   try {
-    const { id } = await context.params;
-    const agreementId = Number(id);
+    const companyContext =
+  await getApiCompanyContext();
+
+if (
+  companyContext.status ===
+  "UNAUTHENTICATED"
+) {
+  return NextResponse.json(
+    {
+      error:
+        "You must be signed in.",
+    },
+    {
+      status: 401,
+    }
+  );
+}
+
+if (
+  companyContext.status ===
+  "NO_COMPANY"
+) {
+  return NextResponse.json(
+    {
+      error:
+        "No active company membership was found.",
+    },
+    {
+      status: 403,
+    }
+  );
+}
+
+const {
+  user,
+  membership,
+  companyId,
+} = companyContext;
+
+    const canApplyTerms =
+      user.platformRole ===
+        "SUPER_ADMIN" ||
+      membership.role?.name ===
+        "Company Admin" ||
+      membership.role?.name ===
+        "Accounts";
+
+    if (!canApplyTerms) {
+      return NextResponse.json(
+        {
+          error:
+            "You do not have permission to apply commercial terms.",
+        },
+        {
+          status: 403,
+        }
+      );
+    }
+
+    const { id } =
+      await context.params;
+
+    const agreementId =
+      Number(id);
 
     if (
-      !Number.isInteger(agreementId) ||
+      !Number.isInteger(
+        agreementId
+      ) ||
       agreementId <= 0
     ) {
       return NextResponse.json(
@@ -45,6 +111,9 @@ export async function POST(
     const updatedAgreement =
       await applyCommercialTerms({
         agreementId,
+
+        companyId:
+          companyId,
 
         discount:
           body.discount,

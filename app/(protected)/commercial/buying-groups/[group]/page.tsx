@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
 import { prisma } from "@/lib/prisma";
 import BuyingGroupMemberTable from "./BuyingGroupMemberTable";
 
@@ -54,16 +54,13 @@ const search = (filters.search ?? "").trim().toLowerCase();
 
   const buyingGroup = decodeURIComponent(group);
 
-  const user = await requireAuth();
-  const membership = user.memberships[0];
-
-  if (!membership) {
-    notFound();
-  }
+  const {
+    companyId,
+  } = await requireCompanyContext();
 
   const customers = await prisma.customer.findMany({
     where: {
-      companyId: membership.companyId,
+      companyId,
       buyingGroup,
     },
     orderBy: {
@@ -85,7 +82,7 @@ const search = (filters.search ?? "").trim().toLowerCase();
 
 const invoices = await prisma.salesInvoice.findMany({
   where: {
-    companyId: membership.companyId,
+    companyId,
   },
   orderBy: {
     invoiceDate: "desc",
@@ -402,3 +399,5 @@ function TrendBadge({
     </span>
   );
 }
+
+

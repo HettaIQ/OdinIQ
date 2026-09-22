@@ -3,8 +3,8 @@ import {
 } from "next/server";
 
 import {
-  requireAuth,
-} from "@/lib/auth/requireAuth";
+  getApiCompanyContext,
+} from "@/lib/auth/getApiCompanyContext";
 
 import {
   prisma,
@@ -25,44 +25,65 @@ export async function POST(
   context: RouteContext
 ) {
   try {
-    const user =
-      await requireAuth();
+    const companyContext =
+  await getApiCompanyContext();
 
-    const membership =
-      user.memberships[0];
-
-    if (!membership) {
-      return NextResponse.json(
-        {
-          error:
-            "No active company membership found.",
-        },
-        {
-          status: 403,
-        }
-      );
+if (
+  companyContext.status ===
+  "UNAUTHENTICATED"
+) {
+  return NextResponse.json(
+    {
+      error:
+        "You must be signed in.",
+    },
+    {
+      status: 401,
     }
+  );
+}
 
-    const roleName =
-      membership.role?.name ?? "";
-
-    const allowed =
-      roleName ===
-        "Company Admin" ||
-      roleName ===
-        "Accounts";
-
-    if (!allowed) {
-      return NextResponse.json(
-        {
-          error:
-            "You do not have permission to edit commercial agreements.",
-        },
-        {
-          status: 403,
-        }
-      );
+if (
+  companyContext.status ===
+  "NO_COMPANY"
+) {
+  return NextResponse.json(
+    {
+      error:
+        "No active company membership found.",
+    },
+    {
+      status: 403,
     }
+  );
+}
+
+const {
+  user,
+  membership,
+  companyId,
+} = companyContext;
+
+const canManageAgreements =
+  user.platformRole === "SUPER_ADMIN" ||
+  Boolean(
+    membership.role?.permissions.some(
+      ({ permission }) =>
+        permission.key === "agreements.manage",
+    ),
+  );
+
+if (!canManageAgreements) {
+  return NextResponse.json(
+    {
+      error:
+        "You do not have permission to edit commercial agreements.",
+    },
+    {
+      status: 403,
+    },
+  );
+}
 
     const { id } =
       await context.params;
@@ -96,32 +117,18 @@ export async function POST(
       ).trim();
 
     /*
-     * Older OdinIQ agreements may have
-     * companyId = null.
-     *
-     * Allow the current company's agreement
-     * OR a legacy unassigned agreement.
+     * Only allow an agreement belonging
+     * to the user's current company.
      */
     const agreement =
       await prisma.commercialAgreement.findFirst({
         where: {
-          id: agreementId,
-
-          OR: [
-            {
-              companyId:
-                membership.companyId,
-            },
-
-            {
-              companyId: null,
-            },
-          ],
-        },
+  id: agreementId,
+  companyId,
+},
 
         select: {
           id: true,
-          companyId: true,
         },
       });
 
@@ -137,11 +144,6 @@ export async function POST(
       );
     }
 
-    /*
-     * When editing an old unassigned
-     * agreement, attach it to the current
-     * company at the same time.
-     */
     const updatedAgreement =
       await prisma.commercialAgreement.update({
         where: {
@@ -153,10 +155,6 @@ export async function POST(
           buyingGroup:
             buyingGroup ||
             null,
-
-          companyId:
-            agreement.companyId ??
-            membership.companyId,
         },
       });
 

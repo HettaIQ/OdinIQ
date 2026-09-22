@@ -1,17 +1,13 @@
 import Link from "next/link";
 
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
 import QuoteImportUploader from "./QuoteImportUploader";
 
 export const dynamic = "force-dynamic";
 
 export default async function QuoteImportPage() {
-  const user = await requireAuth();
-  const membership = user.memberships[0];
+  await requireCompanyContext();
 
-  if (!membership) {
-    throw new Error("No active company membership found.");
-  }
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-8">

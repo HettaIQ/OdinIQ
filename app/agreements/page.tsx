@@ -1,10 +1,19 @@
 import Link from "next/link";
+
+import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
 export default async function AgreementsPage() {
+  const {
+    companyId,
+  } = await requireCompanyContext();
+
   const agreements = await prisma.commercialAgreement.findMany({
+    where: {
+      companyId,
+    },
     include: {
       documents: true,
       discounts: true,

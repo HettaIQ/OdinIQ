@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { prisma } from "@/lib/prisma";
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
 import {
   getCustomerImportAllocation,
   getCustomerImportSession,
@@ -88,21 +88,23 @@ function getEmail(row: CustomerImportRow) {
 export default async function SageAgentAllocationPage({
   params,
 }: PageProps) {
-  const user = await requireAuth();
-  const membership = user.memberships[0];
-
-  if (!membership) {
-    throw new Error("No active company membership found.");
-  }
+  const {
+    membership,
+    companyId,
+  } = await requireCompanyContext();
 
   const { sageAgent } = await params;
   const agentName = decodeURIComponent(sageAgent);
 
   const canManage =
-    membership.role?.name === "Company Admin" ||
-    membership.role?.name === "Accounts";
+  Boolean(
+    membership.role?.permissions.some(
+      ({ permission }) =>
+        permission.key === "imports.manage",
+    ),
+  );
 
-  const session = getCustomerImportSession(membership.companyId);
+  const session = getCustomerImportSession(companyId);
 
   const agentRows =
     session?.rows.filter((row) => {
@@ -115,7 +117,7 @@ export default async function SageAgentAllocationPage({
     .map((row) => {
       const accountCode = getAccountReference(row);
       const allocation = accountCode
-        ? getCustomerImportAllocation(membership.companyId, accountCode)
+        ? getCustomerImportAllocation(companyId, accountCode)
         : null;
 
       return {
@@ -134,7 +136,7 @@ export default async function SageAgentAllocationPage({
 
   const agentMemberships = await prisma.companyMembership.findMany({
     where: {
-      companyId: membership.companyId,
+      companyId: companyId,
       active: true,
       user: {
         active: true,

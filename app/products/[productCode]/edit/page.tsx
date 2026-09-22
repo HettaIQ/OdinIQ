@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
 import { prisma } from "@/lib/prisma";
 
 import { updateProduct } from "./actions";
@@ -17,19 +17,11 @@ type EditProductPageProps = {
 export default async function EditProductPage({
   params,
 }: EditProductPageProps) {
-  const user = await requireAuth();
-  const membership =
-    user.memberships[0];
-
-  if (!membership) {
-    return (
-      <main style={pageStyle}>
-        <div style={containerStyle}>
-          No active company membership found.
-        </div>
-      </main>
-    );
-  }
+  const {
+    user,
+    membership,
+    companyId,
+  } = await requireCompanyContext();
 
   const canEditProduct =
     user.platformRole === "SUPER_ADMIN" ||
@@ -79,22 +71,15 @@ export default async function EditProductPage({
     );
 
   const product =
-    await prisma.product.findFirst({
-      where: {
-        productCode:
-          decodedProductCode,
+  await prisma.product.findFirst({
+    where: {
+      productCode:
+        decodedProductCode,
 
-        OR: [
-          {
-            companyId:
-              membership.companyId,
-          },
-          {
-            companyId: null,
-          },
-        ],
-      },
-    });
+      companyId:
+        companyId,
+    },
+  });
 
   if (!product) {
     notFound();
@@ -105,25 +90,18 @@ export default async function EditProductPage({
    * categories and brands already stored in
    * OdinIQ.
    */
-  const existingProducts =
-    await prisma.product.findMany({
-      where: {
-        OR: [
-          {
-            companyId:
-              membership.companyId,
-          },
-          {
-            companyId: null,
-          },
-        ],
-      },
-      select: {
-        supplier: true,
-        category: true,
-        brand: true,
-      },
-    });
+ const existingProducts =
+  await prisma.product.findMany({
+    where: {
+      companyId:
+        companyId,
+    },
+    select: {
+      supplier: true,
+      category: true,
+      brand: true,
+    },
+  });;
 
   const suppliers =
     uniqueValues(

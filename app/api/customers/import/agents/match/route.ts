@@ -1,25 +1,36 @@
 import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { getApiCompanyContext } from "@/lib/auth/getApiCompanyContext";
 
 export async function POST(request: Request) {
   try {
-    const user = await requireAuth();
-    const membership = user.memberships[0];
+    const companyContext =
+      await getApiCompanyContext();
 
-    if (!membership) {
-      throw new Error("No active company membership found.");
-    }
-
-    const canManage =
-      membership.role?.name === "Company Admin" ||
-      membership.role?.name === "Accounts";
-
-    if (!canManage) {
+    if (
+      companyContext.status ===
+      "UNAUTHENTICATED"
+    ) {
       return NextResponse.json(
         {
-          error: "You do not have permission to match sales agents.",
+          error:
+            "You must be signed in.",
+        },
+        {
+          status: 401,
+        }
+      );
+    }
+
+    if (
+      companyContext.status ===
+      "NO_COMPANY"
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "No active company membership found.",
         },
         {
           status: 403,
@@ -27,15 +38,51 @@ export async function POST(request: Request) {
       );
     }
 
-    const body = await request.json();
+    const {
+  user,
+  membership,
+  companyId,
+} = companyContext;
 
-    const sageAgentName = String(body?.sageAgentName ?? "").trim();
-    const membershipId = Number(body?.membershipId);
+const canManage =
+  user.platformRole === "SUPER_ADMIN" ||
+  Boolean(
+    membership.role?.permissions.some(
+      ({ permission }) =>
+        permission.key === "imports.manage",
+    ),
+  );
+
+    if (!canManage) {
+      return NextResponse.json(
+        {
+          error:
+            "You do not have permission to match sales agents.",
+        },
+        {
+          status: 403,
+        }
+      );
+    }
+
+    const body =
+      await request.json();
+
+    const sageAgentName =
+      String(
+        body?.sageAgentName ?? ""
+      ).trim();
+
+    const membershipId =
+      Number(
+        body?.membershipId
+      );
 
     if (!sageAgentName) {
       return NextResponse.json(
         {
-          error: "Sage agent name is required.",
+          error:
+            "Sage agent name is required.",
         },
         {
           status: 400,
@@ -43,10 +90,16 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!Number.isInteger(membershipId) || membershipId <= 0) {
+    if (
+      !Number.isInteger(
+        membershipId
+      ) ||
+      membershipId <= 0
+    ) {
       return NextResponse.json(
         {
-          error: "Please select an existing OdinIQ sales agent.",
+          error:
+            "Please select an existing OdinIQ sales agent.",
         },
         {
           status: 400,
@@ -54,27 +107,29 @@ export async function POST(request: Request) {
       );
     }
 
-    const selectedMembership = await prisma.companyMembership.findFirst({
-      where: {
-        id: membershipId,
-        companyId: membership.companyId,
-        active: true,
-        role: {
-          name: "Sales Agent",
-        },
-        user: {
+    const selectedMembership =
+      await prisma.companyMembership.findFirst({
+        where: {
+          id: membershipId,
+          companyId,
           active: true,
+          role: {
+            name: "Sales Agent",
+          },
+          user: {
+            active: true,
+          },
         },
-      },
-      include: {
-        user: true,
-      },
-    });
+        include: {
+          user: true,
+        },
+      });
 
     if (!selectedMembership) {
       return NextResponse.json(
         {
-          error: "The selected OdinIQ sales agent could not be found.",
+          error:
+            "The selected OdinIQ sales agent could not be found.",
         },
         {
           status: 404,
@@ -82,27 +137,30 @@ export async function POST(request: Request) {
       );
     }
 
-    const existingAlias = await prisma.agentAlias.findFirst({
-      where: {
-        companyId: membership.companyId,
-        alias: sageAgentName,
-      },
-      include: {
-        membership: {
-          include: {
-            user: true,
+    const existingAlias =
+      await prisma.agentAlias.findFirst({
+        where: {
+          companyId,
+          alias: sageAgentName,
+        },
+        include: {
+          membership: {
+            include: {
+              user: true,
+            },
           },
         },
-      },
-    });
+      });
 
     if (
       existingAlias &&
-      existingAlias.membershipId !== selectedMembership.id
+      existingAlias.membershipId !==
+        selectedMembership.id
     ) {
       return NextResponse.json(
         {
-          error: `${sageAgentName} is already matched to ${existingAlias.membership.user.name}.`,
+          error:
+            `${sageAgentName} is already matched to ${existingAlias.membership.user.name}.`,
         },
         {
           status: 409,
@@ -113,9 +171,11 @@ export async function POST(request: Request) {
     if (!existingAlias) {
       await prisma.agentAlias.create({
         data: {
-          companyId: membership.companyId,
-          membershipId: selectedMembership.id,
-          alias: sageAgentName,
+          companyId,
+          membershipId:
+            selectedMembership.id,
+          alias:
+            sageAgentName,
         },
       });
     }
@@ -123,15 +183,22 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       sageAgentName,
-      membershipId: selectedMembership.id,
-      agentName: selectedMembership.user.name,
+      membershipId:
+        selectedMembership.id,
+      agentName:
+        selectedMembership
+          .user.name,
     });
   } catch (error) {
-    console.error("Match Sage agent failed:", error);
+    console.error(
+      "Match Sage agent failed:",
+      error
+    );
 
     return NextResponse.json(
       {
-        error: "OdinIQ could not match this Sage agent.",
+        error:
+          "OdinIQ could not match this Sage agent.",
       },
       {
         status: 500,

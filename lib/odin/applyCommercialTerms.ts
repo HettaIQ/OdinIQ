@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 
 type ApplyCommercialTermsInput = {
   agreementId: number;
+  companyId: number;
 
   discount: string;
   rebate: string;
@@ -58,6 +59,7 @@ function parseUkDate(
 
 export async function applyCommercialTerms({
   agreementId,
+  companyId,
   discount,
   rebate,
   paymentTerms,
@@ -95,9 +97,27 @@ export async function applyCommercialTerms({
     );
   }
 
+  const agreement =
+    await prisma.commercialAgreement.findFirst({
+      where: {
+        id: agreementId,
+        companyId,
+      },
+
+      select: {
+        id: true,
+      },
+    });
+
+  if (!agreement) {
+    throw new Error(
+      "Agreement not found for this company."
+    );
+  }
+
   return prisma.commercialAgreement.update({
     where: {
-      id: agreementId,
+      id: agreement.id,
     },
 
     data: {

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
 import { prisma } from "@/lib/prisma";
 import { updateCustomer } from "@/app/actions/updateCustomer";
 
@@ -14,8 +14,11 @@ type EditCustomerPageProps = {
 export default async function EditCustomerPage({
   params,
 }: EditCustomerPageProps) {
-  const user = await requireAuth();
-  const membership = user.memberships[0];
+  const {
+    membership,
+    companyId,
+  } = await requireCompanyContext();
+
   const isAgent =
   membership?.role?.name === "Agent" ||
   membership?.role?.name === "Sales Agent";
@@ -34,7 +37,7 @@ export default async function EditCustomerPage({
   const customer = await prisma.customer.findFirst({
   where: {
     id,
-    companyId: membership.companyId,
+    companyId,
     ...(isAgent
       ? {
           assignedMembershipId: membership.id,
@@ -245,3 +248,6 @@ export default async function EditCustomerPage({
     </main>
   );
 }
+
+
+

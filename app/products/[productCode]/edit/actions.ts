@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
 import { prisma } from "@/lib/prisma";
 
 function textOrNull(value: FormDataEntryValue | null) {
@@ -30,14 +30,11 @@ function numberOrNull(value: FormDataEntryValue | null) {
 export async function updateProduct(
   formData: FormData
 ) {
-  const user = await requireAuth();
-  const membership = user.memberships[0];
-
-  if (!membership) {
-    throw new Error(
-      "No active company membership found."
-    );
-  }
+  const {
+    user,
+    membership,
+    companyId,
+  } = await requireCompanyContext();
 
   const canEditProduct =
     user.platformRole === "SUPER_ADMIN" ||
@@ -61,27 +58,18 @@ export async function updateProduct(
   }
 
   const product =
-    await prisma.product.findFirst({
-      where: {
-        productCode,
-
-        OR: [
-          {
-            companyId:
-              membership.companyId,
-          },
-          {
-            companyId: null,
-          },
-        ],
-      },
-      select: {
-        id: true,
-        productCode: true,
-        costPrice: true,
-        companyId: true,
-      },
-    });
+  await prisma.product.findFirst({
+    where: {
+      productCode,
+      companyId:
+        companyId,
+    },
+    select: {
+      id: true,
+      productCode: true,
+      costPrice: true,
+    },
+  });
 
   if (!product) {
     throw new Error(
@@ -130,24 +118,20 @@ export async function updateProduct(
   const costHasChanged =
     costPrice !== product.costPrice;
 
-  await prisma.product.update({
-    where: {
-      id: product.id,
-    },
-    data: {
-      companyId:
-        product.companyId ??
-        membership.companyId,
-
-      description,
-      supplier,
-      category,
-      brand,
-      costPrice,
-      listPrice,
-      active,
-    },
-  });
+ await prisma.product.update({
+  where: {
+    id: product.id,
+  },
+  data: {
+    description,
+    supplier,
+    category,
+    brand,
+    costPrice,
+    listPrice,
+    active,
+  },
+});
 
   if (
     costHasChanged &&
@@ -158,7 +142,7 @@ export async function updateProduct(
     await prisma.productCostHistory.updateMany({
       where: {
         companyId:
-          membership.companyId,
+          companyId,
         productId:
           product.id,
         effectiveTo: null,
@@ -172,7 +156,7 @@ export async function updateProduct(
     await prisma.productCostHistory.create({
       data: {
         companyId:
-          membership.companyId,
+          companyId,
         productId:
           product.id,
         costPrice,

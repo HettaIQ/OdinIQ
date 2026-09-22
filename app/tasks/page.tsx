@@ -1,8 +1,8 @@
 import Link from "next/link";
 
-import { requireAuth } from "@/lib/auth/requireAuth";
-import { prisma } from "@/lib/prisma";
 import { completeTask } from "@/app/actions/completeTask";
+import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
+import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
@@ -17,41 +17,49 @@ type TasksPageProps = {
 export default async function TasksPage({
   searchParams,
 }: TasksPageProps) {
-  const user = await requireAuth();
-  const membership = user.memberships[0];
+  const {
+    user,
+    membership,
+    companyId,
+  } = await requireCompanyContext();
 
-const filters = await searchParams;
+  const canCompleteTasks =
+    user.platformRole === "SUPER_ADMIN" ||
+    Boolean(
+      membership.role?.permissions.some(
+        ({ permission }) =>
+          permission.key === "tasks.complete",
+      ),
+    );
 
-const scope = filters.scope ?? "all";
-const status = filters.status ?? "all";
-const priority = filters.priority ?? "all";
+  const filters = await searchParams;
 
-  if (!membership) {
-    throw new Error("No active company membership found.");
-  }
+  const scope = filters.scope ?? "all";
+  const status = filters.status ?? "all";
+  const priority = filters.priority ?? "all";
 
   const tasks = await prisma.commercialTask.findMany({
     where: {
-  companyId: membership.companyId,
+      companyId,
 
-  ...(scope === "mine"
-    ? {
-        assignedMembershipId: membership.id,
-      }
-    : {}),
+      ...(scope === "mine"
+        ? {
+            assignedMembershipId: membership.id,
+          }
+        : {}),
 
-  ...(status !== "all"
-    ? {
-        status: status.toUpperCase(),
-      }
-    : {}),
+      ...(status !== "all"
+        ? {
+            status: status.toUpperCase(),
+          }
+        : {}),
 
-  ...(priority !== "all"
-    ? {
-        priority: priority.toUpperCase(),
-      }
-    : {}),
-},
+      ...(priority !== "all"
+        ? {
+            priority: priority.toUpperCase(),
+          }
+        : {}),
+    },
     include: {
       customer: true,
       assignedTo: {
@@ -61,52 +69,58 @@ const priority = filters.priority ?? "all";
       },
     },
     orderBy: [
-  {
-    status: "desc",
-  },
-  {
-    priority: "asc",
-  },
-  {
-    dueDate: "asc",
-  },
-  {
-    createdAt: "desc",
-  },
-],
+      {
+        status: "desc",
+      },
+      {
+        priority: "asc",
+      },
+      {
+        dueDate: "asc",
+      },
+      {
+        createdAt: "desc",
+      },
+    ],
   });
-const now = new Date();
 
-const startOfToday = new Date(
-  now.getFullYear(),
-  now.getMonth(),
-  now.getDate(),
-);
+  const now = new Date();
 
-const startOfTomorrow = new Date(
-  now.getFullYear(),
-  now.getMonth(),
-  now.getDate() + 1,
-);
+  const startOfToday = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+  );
 
-const openTasks = tasks.filter((task) => task.status === "OPEN");
+  const startOfTomorrow = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate() + 1,
+  );
 
-const openTaskCount = openTasks.length;
+  const openTasks = tasks.filter(
+    (task) => task.status === "OPEN",
+  );
 
-const overdueCount = openTasks.filter(
-  (task) => task.dueDate && task.dueDate < startOfToday,
-).length;
+  const openTaskCount = openTasks.length;
 
-const dueTodayCount = openTasks.filter(
-  (task) =>
-    task.dueDate &&
-    task.dueDate >= startOfToday &&
-    task.dueDate < startOfTomorrow,
-).length;
+  const overdueCount = openTasks.filter(
+    (task) =>
+      task.dueDate &&
+      task.dueDate < startOfToday,
+  ).length;
 
-const highPriorityCount = openTasks.filter(
-  (task) => task.priority === "HIGH",
-).length;
+  const dueTodayCount = openTasks.filter(
+    (task) =>
+      task.dueDate &&
+      task.dueDate >= startOfToday &&
+      task.dueDate < startOfTomorrow,
+  ).length;
+
+  const highPriorityCount = openTasks.filter(
+    (task) => task.priority === "HIGH",
+  ).length;
+
   return (
     <main className="mx-auto max-w-7xl px-6 py-8">
       <div className="mb-8">
@@ -122,120 +136,130 @@ const highPriorityCount = openTasks.filter(
           Open actions, customer follow-ups and commercial priorities.
         </p>
       </div>
+
       <div className="mb-6 flex flex-wrap gap-3">
-  <Link
-    href={`/tasks?scope=all&status=${status}&priority=${priority}`}
-    className={`rounded-lg px-4 py-2 text-sm font-semibold ${
-      scope === "all"
-        ? "bg-slate-950 text-white"
-        : "border border-slate-300 bg-white text-slate-700"
-    }`}
-  >
-    All tasks
-  </Link>
+        <Link
+          href={`/tasks?scope=all&status=${status}&priority=${priority}`}
+          className={`rounded-lg px-4 py-2 text-sm font-semibold ${
+            scope === "all"
+              ? "bg-slate-950 text-white"
+              : "border border-slate-300 bg-white text-slate-700"
+          }`}
+        >
+          All tasks
+        </Link>
 
-  <Link
-    href={`/tasks?scope=mine&status=${status}&priority=${priority}`}
-    className={`rounded-lg px-4 py-2 text-sm font-semibold ${
-      scope === "mine"
-        ? "bg-slate-950 text-white"
-        : "border border-slate-300 bg-white text-slate-700"
-    }`}
-  >
-    My tasks
-  </Link>
+        <Link
+          href={`/tasks?scope=mine&status=${status}&priority=${priority}`}
+          className={`rounded-lg px-4 py-2 text-sm font-semibold ${
+            scope === "mine"
+              ? "bg-slate-950 text-white"
+              : "border border-slate-300 bg-white text-slate-700"
+          }`}
+        >
+          My tasks
+        </Link>
 
-  <Link
-    href={`/tasks?scope=${scope}&status=open&priority=${priority}`}
-    className={`rounded-lg px-4 py-2 text-sm font-semibold ${
-      status === "open"
-        ? "bg-blue-600 text-white"
-        : "border border-slate-300 bg-white text-slate-700"
-    }`}
-  >
-    Open
-  </Link>
+        <Link
+          href={`/tasks?scope=${scope}&status=open&priority=${priority}`}
+          className={`rounded-lg px-4 py-2 text-sm font-semibold ${
+            status === "open"
+              ? "bg-blue-600 text-white"
+              : "border border-slate-300 bg-white text-slate-700"
+          }`}
+        >
+          Open
+        </Link>
 
-  <Link
-    href={`/tasks?scope=${scope}&status=completed&priority=${priority}`}
-    className={`rounded-lg px-4 py-2 text-sm font-semibold ${
-      status === "completed"
-        ? "bg-emerald-600 text-white"
-        : "border border-slate-300 bg-white text-slate-700"
-    }`}
-  >
-    Completed
-  </Link>
+        <Link
+          href={`/tasks?scope=${scope}&status=completed&priority=${priority}`}
+          className={`rounded-lg px-4 py-2 text-sm font-semibold ${
+            status === "completed"
+              ? "bg-emerald-600 text-white"
+              : "border border-slate-300 bg-white text-slate-700"
+          }`}
+        >
+          Completed
+        </Link>
 
-  <Link
-    href={`/tasks?scope=${scope}&status=${status}&priority=high`}
-    className={`rounded-lg px-4 py-2 text-sm font-semibold ${
-      priority === "high"
-        ? "bg-red-600 text-white"
-        : "border border-slate-300 bg-white text-slate-700"
-    }`}
-  >
-    High
-  </Link>
+        <Link
+          href={`/tasks?scope=${scope}&status=${status}&priority=high`}
+          className={`rounded-lg px-4 py-2 text-sm font-semibold ${
+            priority === "high"
+              ? "bg-red-600 text-white"
+              : "border border-slate-300 bg-white text-slate-700"
+          }`}
+        >
+          High
+        </Link>
 
-  <Link
-    href={`/tasks?scope=${scope}&status=${status}&priority=medium`}
-    className={`rounded-lg px-4 py-2 text-sm font-semibold ${
-      priority === "medium"
-        ? "bg-amber-500 text-white"
-        : "border border-slate-300 bg-white text-slate-700"
-    }`}
-  >
-    Medium
-  </Link>
+        <Link
+          href={`/tasks?scope=${scope}&status=${status}&priority=medium`}
+          className={`rounded-lg px-4 py-2 text-sm font-semibold ${
+            priority === "medium"
+              ? "bg-amber-500 text-white"
+              : "border border-slate-300 bg-white text-slate-700"
+          }`}
+        >
+          Medium
+        </Link>
 
-  <Link
-    href="/tasks"
-    className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
-  >
-    Clear filters
-  </Link>
-</div>
-<div className="mb-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-      Open tasks
-    </p>
-    <p className="mt-2 text-3xl font-bold text-slate-950">
-      {openTaskCount}
-    </p>
-  </div>
+        <Link
+          href="/tasks"
+          className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+        >
+          Clear filters
+        </Link>
+      </div>
 
-  <div className="rounded-2xl border border-red-200 bg-red-50 p-5 shadow-sm">
-    <p className="text-xs font-semibold uppercase tracking-wide text-red-600">
-      Overdue
-    </p>
-    <p className="mt-2 text-3xl font-bold text-red-700">
-      {overdueCount}
-    </p>
-  </div>
+      <div className="mb-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Open tasks
+          </p>
 
-  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
-    <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
-      Due today
-    </p>
-    <p className="mt-2 text-3xl font-bold text-amber-800">
-      {dueTodayCount}
-    </p>
-  </div>
+          <p className="mt-2 text-3xl font-bold text-slate-950">
+            {openTaskCount}
+          </p>
+        </div>
 
-  <div className="rounded-2xl border border-slate-900 bg-slate-950 p-5 shadow-sm">
-    <p className="text-xs font-semibold uppercase tracking-wide text-slate-300">
-      High priority
-    </p>
-    <p className="mt-2 text-3xl font-bold text-white">
-      {highPriorityCount}
-    </p>
-  </div>
-</div>
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-red-600">
+            Overdue
+          </p>
+
+          <p className="mt-2 text-3xl font-bold text-red-700">
+            {overdueCount}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+            Due today
+          </p>
+
+          <p className="mt-2 text-3xl font-bold text-amber-800">
+            {dueTodayCount}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-slate-900 bg-slate-950 p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-300">
+            High priority
+          </p>
+
+          <p className="mt-2 text-3xl font-bold text-white">
+            {highPriorityCount}
+          </p>
+        </div>
+      </div>
+
       {tasks.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-          <p className="font-semibold text-slate-900">No tasks found</p>
+          <p className="font-semibold text-slate-900">
+            No tasks found
+          </p>
+
           <p className="mt-2 text-sm text-slate-500">
             Customer tasks and Odin-approved actions will appear here.
           </p>
@@ -249,21 +273,27 @@ const highPriorityCount = openTasks.filter(
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Task
                   </th>
+
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Customer
                   </th>
+
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Assigned
                   </th>
+
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Priority
                   </th>
+
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Due
                   </th>
+
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Status
                   </th>
+
                   <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Action
                   </th>
@@ -272,7 +302,10 @@ const highPriorityCount = openTasks.filter(
 
               <tbody className="divide-y divide-slate-100">
                 {tasks.map((task) => (
-                  <tr key={task.id} className="hover:bg-slate-50">
+                  <tr
+                    key={task.id}
+                    className="hover:bg-slate-50"
+                  >
                     <td className="px-5 py-4">
                       <p className="font-semibold text-slate-950">
                         {task.title}
@@ -319,20 +352,25 @@ const highPriorityCount = openTasks.filter(
                     </td>
 
                     <td className="px-5 py-4 text-sm">
-  {task.dueDate ? (
-    <span
-      className={
-        task.status === "OPEN" && task.dueDate < startOfToday
-          ? "font-semibold text-red-600"
-          : "text-slate-600"
-      }
-    >
-      {task.dueDate.toLocaleDateString("en-GB")}
-    </span>
-  ) : (
-    <span className="text-slate-500">No due date</span>
-  )}
-</td>
+                      {task.dueDate ? (
+                        <span
+                          className={
+                            task.status === "OPEN" &&
+                            task.dueDate < startOfToday
+                              ? "font-semibold text-red-600"
+                              : "text-slate-600"
+                          }
+                        >
+                          {task.dueDate.toLocaleDateString(
+                            "en-GB",
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-slate-500">
+                          No due date
+                        </span>
+                      )}
+                    </td>
 
                     <td className="px-5 py-4">
                       <span
@@ -348,19 +386,28 @@ const highPriorityCount = openTasks.filter(
 
                     <td className="px-5 py-4 text-right">
                       {task.status === "OPEN" ? (
-                        <form
-                          action={async () => {
-                            "use server";
-                            await completeTask(task.id);
-                          }}
-                        >
-                          <button
-                            type="submit"
-                            className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                        canCompleteTasks ? (
+                          <form
+                            action={async () => {
+                              "use server";
+
+                              await completeTask(
+                                task.id,
+                              );
+                            }}
                           >
-                            Complete
-                          </button>
-                        </form>
+                            <button
+                              type="submit"
+                              className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                            >
+                              Complete
+                            </button>
+                          </form>
+                        ) : (
+                          <span className="text-sm text-slate-400">
+                            Read only
+                          </span>
+                        )
                       ) : (
                         <span className="text-sm font-semibold text-emerald-700">
                           ✓ Completed

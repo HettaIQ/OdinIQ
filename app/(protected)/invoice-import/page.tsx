@@ -1,6 +1,36 @@
 import InvoiceImportUploader from "./InvoiceImportUploader";
 
-export default function InvoiceImportPage() {
+import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
+
+export const dynamic = "force-dynamic";
+
+export default async function InvoiceImportPage() {
+  const {
+    membership,
+  } = await requireCompanyContext();
+
+  const canManage =
+    Boolean(
+      membership.role?.permissions.some(
+        ({ permission }) =>
+          permission.key === "imports.manage",
+      ),
+    );
+
+  if (!canManage) {
+    return (
+      <main className="mx-auto max-w-5xl px-6 py-10">
+        <h1 className="text-3xl font-bold text-slate-950">
+          Import Sales Invoices
+        </h1>
+
+        <p className="mt-3 text-sm text-slate-500">
+          You do not have permission to import invoice data.
+        </p>
+      </main>
+    );
+  }
+
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
       <p className="text-xs font-semibold uppercase tracking-wide text-amber-600">

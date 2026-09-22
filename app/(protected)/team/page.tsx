@@ -1,16 +1,14 @@
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
 export default async function TeamPage() {
-  const user = await requireAuth();
-  const membership = user.memberships[0];
-
-  if (!membership) {
-    throw new Error("No active company membership found.");
-  }
+  const {
+    membership,
+    companyId,
+  } = await requireCompanyContext();
 
 const canManageTeam =
   membership.role?.name === "Company Admin" ||
@@ -22,7 +20,7 @@ if (!canManageTeam) {
 
   const teamMembers = await prisma.companyMembership.findMany({
     where: {
-      companyId: membership.companyId,
+      companyId,
     },
     include: {
       user: true,
@@ -37,7 +35,7 @@ if (!canManageTeam) {
 
   const roles = await prisma.role.findMany({
     where: {
-      companyId: membership.companyId,
+      companyId,
     },
     orderBy: {
       name: "asc",

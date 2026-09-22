@@ -1,21 +1,23 @@
 import Link from "next/link";
 
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
 import SalesOrderImportUploader from "./SalesOrderImportUploader";
 
 export const dynamic = "force-dynamic";
 
 export default async function SalesOrderImportPage() {
-  const user = await requireAuth();
-  const membership = user.memberships[0];
+  const {
+    membership,
+  } = await requireCompanyContext();
 
-  if (!membership) {
-    throw new Error("No active company membership found.");
-  }
 
   const canManage =
-    membership.role?.name === "Company Admin" ||
-    membership.role?.name === "Accounts";
+  Boolean(
+    membership.role?.permissions.some(
+      ({ permission }) =>
+        permission.key === "imports.manage",
+    ),
+  );
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-8">

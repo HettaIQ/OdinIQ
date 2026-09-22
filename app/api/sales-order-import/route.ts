@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 
-import { requireAuth } from "@/lib/auth/requireAuth";
-
+import { getApiCompanyContext } from "@/lib/auth/getApiCompanyContext";
 import { prisma } from "@/lib/prisma";
 
 type SalesOrderImportRow = {
@@ -94,25 +93,49 @@ export async function POST(
   request: Request
 ) {
   try {
-    const user = await requireAuth();
-    const membership =
-      user.memberships[0];
+    const context =
+  await getApiCompanyContext();
 
-    if (!membership) {
-      return NextResponse.json(
-        {
-          error:
-            "No active company membership found.",
-        },
-        { status: 403 }
-      );
-    }
+if (
+  context.status ===
+  "UNAUTHENTICATED"
+) {
+  return NextResponse.json(
+    {
+      error:
+        "You must be signed in.",
+    },
+    { status: 401 }
+  );
+}
 
-    const canImport =
-      membership.role?.name ===
-        "Company Admin" ||
-      membership.role?.name ===
-        "Accounts";
+if (
+  context.status ===
+  "NO_COMPANY"
+) {
+  return NextResponse.json(
+    {
+      error:
+        "No active company membership found.",
+    },
+    { status: 403 }
+  );
+}
+
+const {
+  user,
+  membership,
+  companyId,
+} = context;
+
+const canImport =
+  user.platformRole === "SUPER_ADMIN" ||
+  Boolean(
+    membership.role?.permissions.some(
+      ({ permission }) =>
+        permission.key === "imports.manage",
+    ),
+  );
 
     if (!canImport) {
       return NextResponse.json(
@@ -176,12 +199,20 @@ export async function POST(
             continue;
           }
 
+          /*
+           * Check whether OdinIQ already knows
+           * about this Sales Order.
+           *
+           * This is important for Warehouse:
+           * only genuinely new Sales Orders
+           * automatically enter the live
+           * Warehouse workflow.
+           */
           const existingSalesOrder =
             await tx.salesOrder.findUnique({
               where: {
                 companyId_salesOrderNumber: {
-                  companyId:
-                    membership.companyId,
+                  companyId,
                   salesOrderNumber,
                 },
               },
@@ -258,12 +289,17 @@ export async function POST(
           await tx.salesOrder.upsert({
             where: {
               companyId_salesOrderNumber: {
-                companyId:
-                  membership.companyId,
+                companyId,
                 salesOrderNumber,
               },
             },
 
+            /*
+             * Existing Sales Orders may receive
+             * updated Sage information, but their
+             * Warehouse state is deliberately
+             * left untouched.
+             */
             update: {
               orderDate,
               customerAccountCode,
@@ -274,9 +310,13 @@ export async function POST(
                 importBatchAt,
             },
 
+            /*
+             * A genuinely new Sales Order enters
+             * the live Warehouse workflow at
+             * Order Received.
+             */
             create: {
-              companyId:
-                membership.companyId,
+              companyId,
               salesOrderNumber,
               orderDate,
               customerAccountCode,
@@ -285,6 +325,10 @@ export async function POST(
               status,
               importedAt:
                 importBatchAt,
+
+              warehouseActive: true,
+              warehouseStatus:
+                "ORDER_RECEIVED",
             },
           });
 
@@ -297,9 +341,20 @@ export async function POST(
      * Refresh OdinIQ pages after new Sales Order
      * data has been written.
      */
-    revalidatePath("/commercial/customers", "layout");
-    revalidatePath("/despatch-audit", "layout");
+    revalidatePath(
+      "/commercial/customers",
+      "layout"
+    );
 
+    revalidatePath(
+      "/despatch-audit",
+      "layout"
+    );
+
+    revalidatePath(
+      "/warehouse",
+      "layout"
+    );
 
     return NextResponse.json({
       success: true,

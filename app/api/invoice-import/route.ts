@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { getApiCompanyContext } from "@/lib/auth/getApiCompanyContext";
 import { prisma } from "@/lib/prisma";
 
 type InvoiceImportRow = {
@@ -196,25 +196,49 @@ export async function POST(
   request: Request
 ) {
   try {
-    const user = await requireAuth();
-    const membership =
-      user.memberships[0];
+    const context =
+  await getApiCompanyContext();
 
-    if (!membership) {
-      return NextResponse.json(
-        {
-          error:
-            "No active company membership found.",
-        },
-        { status: 403 }
-      );
-    }
+if (
+  context.status ===
+  "UNAUTHENTICATED"
+) {
+  return NextResponse.json(
+    {
+      error:
+        "You must be signed in.",
+    },
+    { status: 401 }
+  );
+}
 
-    const canImport =
-      membership.role?.name ===
-        "Company Admin" ||
-      membership.role?.name ===
-        "Accounts";
+if (
+  context.status ===
+  "NO_COMPANY"
+) {
+  return NextResponse.json(
+    {
+      error:
+        "No active company membership found.",
+    },
+    { status: 403 }
+  );
+}
+
+const {
+  user,
+  membership,
+  companyId,
+} = context;
+
+const canImport =
+  user.platformRole === "SUPER_ADMIN" ||
+  Boolean(
+    membership.role?.permissions.some(
+      ({ permission }) =>
+        permission.key === "imports.manage",
+    ),
+  );
 
     if (!canImport) {
       return NextResponse.json(
@@ -285,7 +309,7 @@ export async function POST(
           where: {
             companyId_invoiceNumber: {
               companyId:
-                membership.companyId,
+                companyId,
               invoiceNumber,
             },
           },
@@ -400,7 +424,7 @@ export async function POST(
                 companyId_salesOrderNumber:
                   {
                     companyId:
-                      membership.companyId,
+                      companyId,
                     salesOrderNumber,
                   },
               },
@@ -433,7 +457,7 @@ export async function POST(
             {
               where: {
                 companyId:
-                  membership.companyId,
+                  companyId,
                 name: customerNameForLookup,
               },
               select: {
@@ -456,7 +480,7 @@ export async function POST(
             {
               where: {
                 companyId:
-                  membership.companyId,
+                  companyId,
               },
               select: {
                 name: true,
@@ -589,7 +613,7 @@ export async function POST(
                 companyId_invoiceNumber:
                   {
                     companyId:
-                      membership.companyId,
+                      companyId,
                     invoiceNumber:
                       creditedInvoiceNumber,
                   },
@@ -616,7 +640,7 @@ export async function POST(
               companyId_invoiceNumber:
                 {
                   companyId:
-                    membership.companyId,
+                    companyId,
                   invoiceNumber,
                 },
             },
@@ -645,7 +669,7 @@ export async function POST(
 
             create: {
               companyId:
-                membership.companyId,
+                companyId,
               invoiceNumber,
               salesOrderNumber,
               customerOrderNumber,
@@ -668,7 +692,7 @@ export async function POST(
         {
           where: {
             companyId:
-              membership.companyId,
+              companyId,
 
             creditedInvoiceNumber:
               invoiceNumber,

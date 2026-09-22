@@ -61,11 +61,14 @@ model Session {
   userId Int
   user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  activeCompanyId Int?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([userId])
   @@index([expiresAt])
+  @@index([activeCompanyId])
 }
 
 model CompanyMembership {
@@ -603,11 +606,11 @@ model RolePermission {
 
 model Product {
   id          Int    @id @default(autoincrement())
-  productCode String @unique
+  productCode String
   description String
 
-  companyId Int?
-  company   Company? @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
 
   supplier String?
   category String?
@@ -627,6 +630,7 @@ model Product {
   costHistory    ProductCostHistory[]
   aliases        ProductAlias[]
 
+  @@unique([companyId, productCode])
   @@index([companyId])
 }
 
@@ -696,8 +700,8 @@ model CommercialAgreement {
   agreementType String?
   status        String  @default("Active")
 
-  companyId Int?
-  company   Company? @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
 
   customerId Int?
   customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
@@ -899,6 +903,7 @@ model SalesOrder {
   investigatedBy      String?
   investigatedAt      DateTime?
 
+  warehouseActive   Boolean   @default(false)
   warehouseStatus   String    @default("ORDER_RECEIVED")
   warehouseStatusBy String?
   warehouseStatusAt DateTime?

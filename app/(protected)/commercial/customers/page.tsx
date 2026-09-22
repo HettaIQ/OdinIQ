@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
 import { prisma } from "@/lib/prisma";
 
 function normalizeCustomerName(
@@ -129,23 +129,15 @@ export default async function CustomerPerformancePage({
     .trim()
     .toLowerCase();
 
-  const user = await requireAuth();
-  const membership =
-    user.memberships[0];
-
-  if (!membership) {
-    throw new Error(
-      "No active company membership found."
-    );
-  }
+  const {
+    membership,
+    companyId,
+  } = await requireCompanyContext();
 
   const isAgent =
     membership.role?.name === "Agent" ||
     membership.role?.name ===
       "Sales Agent";
-
-  const companyId =
-    membership.companyId;
 
   /*
    * These three queries are independent,
@@ -1256,3 +1248,4 @@ export default async function CustomerPerformancePage({
     </main>
   );
 }
+

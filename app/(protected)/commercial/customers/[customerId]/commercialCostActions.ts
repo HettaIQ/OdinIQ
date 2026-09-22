@@ -1,8 +1,9 @@
+
 "use server";
 
 import { revalidatePath } from "next/cache";
 
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
 import { prisma } from "@/lib/prisma";
 
 const ALLOWED_COST_TYPES = new Set([
@@ -16,12 +17,10 @@ const ALLOWED_COST_TYPES = new Set([
 ]);
 
 async function requireProfitabilityAccess() {
-  const user = await requireAuth();
-  const membership = user.memberships[0];
-
-  if (!membership) {
-    throw new Error("No active company membership found.");
-  }
+  const {
+    membership,
+    companyId,
+  } = await requireCompanyContext();
 
   if (!membership.role?.id) {
     throw new Error("No role found for this user.");
@@ -45,19 +44,24 @@ async function requireProfitabilityAccess() {
     );
   }
 
-  return membership;
+  return {
+    membership,
+    companyId,
+  };
 }
 
 export async function addCustomerCommercialCost(
   customerId: number,
   formData: FormData
 ) {
-  const membership = await requireProfitabilityAccess();
+  const {
+    companyId,
+  } = await requireProfitabilityAccess();
 
   const customer = await prisma.customer.findFirst({
     where: {
       id: customerId,
-      companyId: membership.companyId,
+      companyId,
     },
     select: {
       id: true,
@@ -134,7 +138,9 @@ export async function deleteCustomerCommercialCost(
   customerId: number,
   costId: number
 ) {
-  const membership = await requireProfitabilityAccess();
+  const {
+    companyId,
+  } = await requireProfitabilityAccess();
 
   const existingCost =
     await prisma.customerCommercialCost.findFirst({
@@ -142,7 +148,7 @@ export async function deleteCustomerCommercialCost(
         id: costId,
         customerId,
         customer: {
-          companyId: membership.companyId,
+          companyId,
         },
       },
       select: {

@@ -1,6 +1,6 @@
 import ProductExplorerClient from "./ProductExplorerClient";
 
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -36,8 +36,11 @@ export default async function ProductsPage({
   const period =
     params.period ?? "ytd";
 
-  const user = await requireAuth();
-  const membership = user.memberships[0];
+  const {
+    user,
+    membership,
+    companyId,
+  } = await requireCompanyContext();
 
   if (!membership) {
     return (
@@ -65,20 +68,13 @@ export default async function ProductsPage({
     );
 
   const products =
-    await prisma.product.findMany({
-      where: {
-        OR: [
-          {
-            companyId:
-              membership.companyId,
-          },
-          {
-            companyId: null,
-          },
-        ],
-      },
+  await prisma.product.findMany({
+    where: {
+      companyId:
+        companyId,
+    },
 
-      select: {
+    select: {
         id: true,
         productCode: true,
         description: true,
@@ -255,7 +251,7 @@ export default async function ProductsPage({
 
         salesInvoice: {
           companyId:
-            membership.companyId,
+            companyId,
 
           invoiceDate: {
             gte: previousStart,
@@ -416,7 +412,7 @@ export default async function ProductsPage({
     await prisma.productAlias.findMany({
       where: {
         companyId:
-          membership.companyId,
+          companyId,
       },
 
       select: {

@@ -1,21 +1,16 @@
 import Link from "next/link";
 
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
 export default async function OpportunitiesPage() {
-  const user = await requireAuth();
-  const membership = user.memberships[0];
-
-  if (!membership) {
-    throw new Error("No active company membership found.");
-  }
+  const { companyId } = await requireCompanyContext();
 
   const opportunities = await prisma.commercialOpportunity.findMany({
     where: {
-      companyId: membership.companyId,
+      companyId,
     },
     include: {
       customer: true,
@@ -133,24 +128,31 @@ export default async function OpportunitiesPage() {
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Opportunity
                   </th>
+
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Customer
                   </th>
+
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Stage
                   </th>
+
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Value
                   </th>
+
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Probability
                   </th>
+
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Expected close
                   </th>
+
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Owner
                   </th>
+
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Status
                   </th>
@@ -159,14 +161,17 @@ export default async function OpportunitiesPage() {
 
               <tbody className="divide-y divide-slate-100">
                 {opportunities.map((opportunity) => (
-                  <tr key={opportunity.id} className="hover:bg-slate-50">
+                  <tr
+                    key={opportunity.id}
+                    className="hover:bg-slate-50"
+                  >
                     <td className="px-5 py-4">
-                     <Link
-  href={`/opportunities/${opportunity.id}`}
-  className="font-semibold text-slate-950 hover:text-amber-600"
->
-  {opportunity.title}
-</Link>
+                      <Link
+                        href={`/opportunities/${opportunity.id}`}
+                        className="font-semibold text-slate-950 hover:text-amber-600"
+                      >
+                        {opportunity.title}
+                      </Link>
 
                       {opportunity.description ? (
                         <p className="mt-1 max-w-md text-sm text-slate-500">

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
 import { prisma } from "@/lib/prisma";
 import { updateTeamMember } from "@/app/actions/updateTeamMember";
 import { reassignCustomer } from "@/app/actions/reassignCustomer";
@@ -17,12 +17,9 @@ export const dynamic = "force-dynamic";
 export default async function TeamMemberPage({
   params,
 }: TeamMemberPageProps) {
-  const currentUser = await requireAuth();
-  const currentMembership = currentUser.memberships[0];
-
-  if (!currentMembership) {
-    throw new Error("No active company membership found.");
-  }
+  const {
+    companyId,
+  } = await requireCompanyContext();
 
   const { membershipId } = await params;
   const id = Number(membershipId);
@@ -34,7 +31,7 @@ export default async function TeamMemberPage({
   const member = await prisma.companyMembership.findFirst({
     where: {
       id,
-      companyId: currentMembership.companyId,
+      companyId: companyId,
     },
     include: {
       user: true,
@@ -47,7 +44,7 @@ export default async function TeamMemberPage({
   }
   const availableOwners = await prisma.companyMembership.findMany({
   where: {
-    companyId: currentMembership.companyId,
+    companyId: companyId,
     active: true,
     role: {
       name: {
@@ -67,7 +64,7 @@ export default async function TeamMemberPage({
 });
 const roles = await prisma.role.findMany({
   where: {
-    companyId: currentMembership.companyId,
+    companyId: companyId,
   },
   orderBy: {
     name: "asc",
@@ -75,7 +72,7 @@ const roles = await prisma.role.findMany({
 });
 const allocatedCustomers = await prisma.customer.findMany({
   where: {
-    companyId: currentMembership.companyId,
+    companyId: companyId,
     assignedMembershipId: member.id,
   },
   orderBy: {
@@ -89,7 +86,7 @@ const allocatedAccountCodes = allocatedCustomers.map(
 
 const allocatedInvoices = await prisma.salesInvoice.findMany({
   where: {
-    companyId: currentMembership.companyId,
+    companyId: companyId,
     customerAccountCode: {
       in: allocatedAccountCodes,
     },

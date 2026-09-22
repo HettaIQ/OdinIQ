@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
 import { prisma } from "@/lib/prisma";
 
 import {
@@ -172,16 +172,10 @@ export default async function CustomerDetailPage({
   params,
   searchParams,
 }: CustomerDetailPageProps) {
-  const user = await requireAuth();
-
-  const membership =
-    user.memberships[0];
-
-  if (!membership) {
-    throw new Error(
-      "No active company membership found."
-    );
-  }
+  const {
+    membership,
+    companyId,
+  } = await requireCompanyContext();
 
   const isAgent =
     membership.role?.name ===
@@ -357,7 +351,7 @@ const productView =
         id,
 
         companyId:
-          membership.companyId,
+          companyId,
 
         ...(isAgent
           ? {
@@ -380,7 +374,7 @@ const productView =
     await prisma.salesInvoice.findMany({
       where: {
         companyId:
-          membership.companyId,
+          companyId,
 
         customerAccountCode:
           customer.accountCode,
@@ -422,7 +416,7 @@ const productView =
     prisma.salesOrder.findMany({
       where: {
         companyId:
-          membership.companyId,
+          companyId,
 
         salesOrderNumber: {
           in: [
@@ -439,7 +433,7 @@ const productView =
     prisma.goodsDespatchNote.findMany({
       where: {
         companyId:
-          membership.companyId,
+          companyId,
 
         salesOrderNumber: {
           in: [
@@ -1207,7 +1201,7 @@ if (growthOpportunity) {
             {
               where: {
                 companyId:
-                  membership.companyId,
+                  companyId,
 
                 salesOrderNumber: {
                   in: salesOrderNumbers,
@@ -1271,29 +1265,17 @@ if (growthOpportunity) {
 
    const products =
   requiredStockCodes.size > 0
-    ? await prisma.product.findMany({
-        where: {
-          AND: [
-            {
-              OR: [
-                {
-                  companyId:
-                    membership.companyId,
-                },
-                {
-                  companyId: null,
-                },
-              ],
-            },
-            {
-              productCode: {
-                in: [
-                  ...requiredStockCodes,
-                ],
-              },
-            },
-          ],
-        },
+ ? await prisma.product.findMany({
+    where: {
+      companyId:
+        companyId,
+
+      productCode: {
+        in: [
+          ...requiredStockCodes,
+        ],
+      },
+    },
 
         select: {
           productCode: true,
@@ -1315,7 +1297,7 @@ const productAliases =
     ? await prisma.productAlias.findMany({
         where: {
           companyId:
-            membership.companyId,
+            companyId,
 
           aliasCode: {
             in: [
@@ -1637,7 +1619,7 @@ for (const alias of productAliases) {
       await prisma.commercialAgreement.findMany({
         where: {
           companyId:
-            membership.companyId,
+            companyId,
 
           OR:
             agreementOrConditions,
@@ -1768,7 +1750,7 @@ for (const alias of productAliases) {
           await prisma.customer.findMany({
             where: {
               companyId:
-                membership.companyId,
+                companyId,
             },
 
             select: {
@@ -1803,7 +1785,7 @@ for (const alias of productAliases) {
             ? await prisma.salesInvoice.findMany({
                 where: {
                   companyId:
-                    membership.companyId,
+                    companyId,
 
                   customerAccountCode: {
                     in: groupAccountCodes,
@@ -4090,3 +4072,4 @@ if (!customer) {
     </main>
   );
 }
+

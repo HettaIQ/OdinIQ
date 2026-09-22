@@ -1,52 +1,70 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
-import { requireAuth } from "@/lib/auth/requireAuth";
 import { redirect } from "next/navigation";
 
-export async function updateCustomer(formData: FormData) {
-  const user = await requireAuth();
-  const membership = user.memberships[0];
+import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
+import { prisma } from "@/lib/prisma";
 
-  if (!membership) {
-    throw new Error("No active company membership found.");
-  }
-if (
-  membership.role?.name !== "Company Admin" &&
-  membership.role?.name !== "Accounts"
+export async function updateCustomer(
+  formData: FormData
 ) {
-  throw new Error(
-    "You do not have permission to manage customer ownership or buying groups."
+  const {
+    user,
+    membership,
+    companyId,
+  } = await requireCompanyContext();
+
+  const canManageCustomers =
+    user.platformRole === "SUPER_ADMIN" ||
+    Boolean(
+      membership.role?.permissions.some(
+        ({ permission }) =>
+          permission.key === "customers.manage"
+      )
+    );
+
+  if (!canManageCustomers) {
+    throw new Error(
+      "You do not have permission to manage customer account details."
+    );
+  }
+
+  const customerId = Number(
+    formData.get("customerId")
   );
-}
-  const customerId = Number(formData.get("customerId"));
+
   const assignedMembershipIdValue = String(
     formData.get("assignedMembershipId") ?? ""
   );
-  const buyingGroup = String(formData.get("buyingGroup") ?? "").trim();
 
-  const name = String(formData.get("name") ?? "").trim();
+  const buyingGroup = String(
+    formData.get("buyingGroup") ?? ""
+  ).trim();
 
-const paymentTerms = String(
-  formData.get("paymentTerms") ?? ""
-).trim();
+  const name = String(
+    formData.get("name") ?? ""
+  ).trim();
 
-const discountValue = String(
-  formData.get("discount") ?? ""
-).trim();
+  const paymentTerms = String(
+    formData.get("paymentTerms") ?? ""
+  ).trim();
 
-const creditLimitValue = String(
-  formData.get("creditLimit") ?? ""
-).trim();
+  const discountValue = String(
+    formData.get("discount") ?? ""
+  ).trim();
 
-const currentBalanceValue = String(
-  formData.get("currentBalance") ?? ""
-).trim();
+  const creditLimitValue = String(
+    formData.get("creditLimit") ?? ""
+  ).trim();
 
-const status = String(
-  formData.get("status") ?? "ACTIVE"
-).trim();
+  const currentBalanceValue = String(
+    formData.get("currentBalance") ?? ""
+  ).trim();
+
+  const status = String(
+    formData.get("status") ?? "ACTIVE"
+  ).trim();
 
   const agentEffectiveFromValue = String(
     formData.get("agentEffectiveFrom") ?? ""
@@ -56,56 +74,100 @@ const status = String(
     formData.get("buyingGroupEffectiveFrom") ?? ""
   );
 
-  if (!customerId) {
-    throw new Error("Customer ID is required.");
+  if (!Number.isInteger(customerId)) {
+    throw new Error(
+      "A valid customer ID is required."
+    );
   }
 
-  const customer = await prisma.customer.findFirst({
-    where: {
-      id: customerId,
-      companyId: membership.companyId,
-    },
-  });
+  /*
+   * The customer must belong to the
+   * currently selected company.
+   */
+  const customer =
+    await prisma.customer.findFirst({
+      where: {
+        id: customerId,
+        companyId,
+      },
+    });
 
   if (!customer) {
-    throw new Error("Customer not found.");
+    throw new Error(
+      "Customer not found."
+    );
   }
 
-  const assignedMembershipId = assignedMembershipIdValue
-    ? Number(assignedMembershipIdValue)
-    : null;
+  const assignedMembershipId =
+    assignedMembershipIdValue
+      ? Number(assignedMembershipIdValue)
+      : null;
 
-    const selectedAgent = assignedMembershipId
-  ? await prisma.companyMembership.findFirst({
-      where: {
-        id: assignedMembershipId,
-        companyId: membership.companyId,
-      },
-      include: {
-        user: true,
-      },
-    })
-  : null;
+  if (
+    assignedMembershipId !== null &&
+    !Number.isInteger(assignedMembershipId)
+  ) {
+    throw new Error(
+      "A valid team member is required."
+    );
+  }
 
-  const agentEffectiveFrom = agentEffectiveFromValue
-    ? new Date(agentEffectiveFromValue)
-    : new Date();
+  /*
+   * If an owner has been selected, they must
+   * be an active membership of the same
+   * company as the customer.
+   */
+  const selectedAgent =
+    assignedMembershipId !== null
+      ? await prisma.companyMembership.findFirst({
+          where: {
+            id: assignedMembershipId,
+            companyId,
+            active: true,
+          },
+          include: {
+            user: true,
+          },
+        })
+      : null;
 
-  const buyingGroupEffectiveFrom = buyingGroupEffectiveFromValue
-    ? new Date(buyingGroupEffectiveFromValue)
-    : new Date();
+  if (
+    assignedMembershipId !== null &&
+    !selectedAgent
+  ) {
+    throw new Error(
+      "Selected team member was not found in the active company."
+    );
+  }
+
+  const agentEffectiveFrom =
+    agentEffectiveFromValue
+      ? new Date(agentEffectiveFromValue)
+      : new Date();
+
+  const buyingGroupEffectiveFrom =
+    buyingGroupEffectiveFromValue
+      ? new Date(buyingGroupEffectiveFromValue)
+      : new Date();
 
   await prisma.$transaction(async (tx) => {
     const agentChanged =
-      customer.assignedMembershipId !== assignedMembershipId;
+      customer.assignedMembershipId !==
+      assignedMembershipId;
 
     const buyingGroupChanged =
-      (customer.buyingGroup ?? "") !== buyingGroup;
+      (customer.buyingGroup ?? "") !==
+      buyingGroup;
 
     if (agentChanged) {
+      /*
+       * History records are reached through
+       * the customer we already proved belongs
+       * to the active company.
+       */
       await tx.customerAgentHistory.updateMany({
         where: {
-          customerId,
+          customerId: customer.id,
           effectiveTo: null,
         },
         data: {
@@ -113,70 +175,120 @@ const status = String(
         },
       });
 
-      if (assignedMembershipId) {
+      if (
+        assignedMembershipId !== null &&
+        selectedAgent
+      ) {
         await tx.customerAgentHistory.create({
-  data: {
-    customerId,
-    membershipId: assignedMembershipId,
-    agentName:
-      selectedAgent?.user.name ??
-      selectedAgent?.user.email ??
-      "Unknown agent",
-    effectiveFrom: agentEffectiveFrom,
-  },
-});
+          data: {
+            customerId: customer.id,
+            membershipId: selectedAgent.id,
+            agentName:
+              selectedAgent.user.name ??
+              selectedAgent.user.email ??
+              "Unknown agent",
+            effectiveFrom: agentEffectiveFrom,
+          },
+        });
       }
     }
 
     if (buyingGroupChanged) {
       await tx.customerBuyingGroupHistory.updateMany({
         where: {
-          customerId,
+          customerId: customer.id,
           effectiveTo: null,
         },
         data: {
-          effectiveTo: buyingGroupEffectiveFrom,
+          effectiveTo:
+            buyingGroupEffectiveFrom,
         },
       });
 
       if (buyingGroup) {
         await tx.customerBuyingGroupHistory.create({
           data: {
-            customerId,
+            customerId: customer.id,
             buyingGroup,
-            effectiveFrom: buyingGroupEffectiveFrom,
+            effectiveFrom:
+              buyingGroupEffectiveFrom,
           },
         });
       }
     }
 
+    /*
+     * Update the exact customer that has
+     * already been validated against the
+     * active company.
+     */
     await tx.customer.update({
       where: {
-        id: customerId,
+        id: customer.id,
       },
       data: {
-  assignedMembershipId,
-  buyingGroup: buyingGroup || null,
-  name,
-  paymentTerms: paymentTerms || null,
-  discount: discountValue ? Number(discountValue) : null,
-  creditLimit: creditLimitValue
-  ? Number(creditLimitValue.replace(/,/g, ""))
-  : null,
+        assignedMembershipId:
+          selectedAgent?.id ?? null,
 
-currentBalance: currentBalanceValue
-  ? Number(currentBalanceValue.replace(/,/g, ""))
-  : null,
-  status,
-},
+        buyingGroup:
+          buyingGroup || null,
+
+        name,
+
+        paymentTerms:
+          paymentTerms || null,
+
+        discount:
+          discountValue
+            ? Number(discountValue)
+            : null,
+
+        creditLimit:
+          creditLimitValue
+            ? Number(
+                creditLimitValue.replace(
+                  /,/g,
+                  ""
+                )
+              )
+            : null,
+
+        currentBalance:
+          currentBalanceValue
+            ? Number(
+                currentBalanceValue.replace(
+                  /,/g,
+                  ""
+                )
+              )
+            : null,
+
+        status,
+      },
     });
   });
 
-  revalidatePath(`/customers/${customerId}`);
+  revalidatePath(
+    `/customers/${customer.id}`
+  );
+
   revalidatePath("/customers");
-  revalidatePath(`/commercial/customers/${customerId}`);
-revalidatePath(`/commercial/customers/${customerId}/edit`);
-revalidatePath("/commercial/customers");
-revalidatePath("/commercial");
-redirect(`/commercial/customers/${customerId}`);
+
+  revalidatePath(
+    `/commercial/customers/${customer.id}`
+  );
+
+  revalidatePath(
+    `/commercial/customers/${customer.id}/edit`
+  );
+
+  revalidatePath(
+    "/commercial/customers"
+  );
+
+  revalidatePath("/commercial");
+
+  redirect(
+    `/commercial/customers/${customer.id}`
+  );
 }

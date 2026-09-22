@@ -3,32 +3,70 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
 import { prisma } from "@/lib/prisma";
 
 export async function createTeamMember(formData: FormData) {
-  const currentUser = await requireAuth();
-  const membership = currentUser.memberships[0];
+  const {
+    user: currentUser,
+    membership,
+    companyId,
+  } = await requireCompanyContext();
 
-  if (!membership) {
-    throw new Error("No active company membership found.");
+  const canManageUsers =
+    currentUser.platformRole === "SUPER_ADMIN" ||
+    Boolean(
+      membership.role?.permissions.some(
+        ({ permission }) =>
+          permission.key === "users.manage"
+      )
+    );
+
+  if (!canManageUsers) {
+    throw new Error(
+      "You do not have permission to manage team members."
+    );
   }
 
-  const name = String(formData.get("name") ?? "").trim();
-  const email = String(formData.get("email") ?? "")
+  const name = String(
+    formData.get("name") ?? ""
+  ).trim();
+
+  const email = String(
+    formData.get("email") ?? ""
+  )
     .trim()
     .toLowerCase();
-  const roleId = Number(formData.get("roleId"));
-  const agentCode = String(formData.get("agentCode") ?? "").trim();
 
-  if (!name || !email || !Number.isInteger(roleId)) {
-    throw new Error("Name, email and role are required.");
+  const roleId = Number(
+    formData.get("roleId")
+  );
+
+  const agentCode = String(
+    formData.get("agentCode") ?? ""
+  ).trim();
+
+  if (
+    !name ||
+    !email ||
+    !Number.isInteger(roleId)
+  ) {
+    throw new Error(
+      "Name, email and role are required."
+    );
   }
 
+  /*
+   * The selected role must belong to the
+   * currently active company.
+   *
+   * This prevents a role ID from another
+   * OdinIQ tenant being submitted manually.
+   */
   const role = await prisma.role.findFirst({
     where: {
       id: roleId,
-      companyId: membership.companyId,
+      companyId,
     },
   });
 
@@ -36,6 +74,12 @@ export async function createTeamMember(formData: FormData) {
     throw new Error("Role not found.");
   }
 
+  /*
+   * Users are global identities in OdinIQ.
+   *
+   * A user's membership, role and permissions
+   * remain company-specific.
+   */
   const user = await prisma.user.upsert({
     where: {
       email,
@@ -53,23 +97,25 @@ export async function createTeamMember(formData: FormData) {
     where: {
       userId_companyId: {
         userId: user.id,
-        companyId: membership.companyId,
+        companyId,
       },
     },
     update: {
       roleId: role.id,
       agentCode:
-        role.name === "Sales Agent" && agentCode
+        role.name === "Sales Agent" &&
+        agentCode
           ? agentCode
           : null,
       active: true,
     },
     create: {
       userId: user.id,
-      companyId: membership.companyId,
+      companyId,
       roleId: role.id,
       agentCode:
-        role.name === "Sales Agent" && agentCode
+        role.name === "Sales Agent" &&
+        agentCode
           ? agentCode
           : null,
       active: true,

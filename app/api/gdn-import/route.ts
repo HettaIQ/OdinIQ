@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { getApiCompanyContext } from "@/lib/auth/getApiCompanyContext";
 import { prisma } from "@/lib/prisma";
 
 type GdnImportRow = {
@@ -95,25 +95,49 @@ export async function POST(
   request: Request
 ) {
   try {
-    const user = await requireAuth();
-    const membership =
-      user.memberships[0];
+    const context =
+  await getApiCompanyContext();
 
-    if (!membership) {
-      return NextResponse.json(
-        {
-          error:
-            "No active company membership found.",
-        },
-        { status: 403 }
-      );
-    }
+if (
+  context.status ===
+  "UNAUTHENTICATED"
+) {
+  return NextResponse.json(
+    {
+      error:
+        "You must be signed in.",
+    },
+    { status: 401 }
+  );
+}
 
-    const canImport =
-      membership.role?.name ===
-        "Company Admin" ||
-      membership.role?.name ===
-        "Accounts";
+if (
+  context.status ===
+  "NO_COMPANY"
+) {
+  return NextResponse.json(
+    {
+      error:
+        "No active company membership found.",
+    },
+    { status: 403 }
+  );
+}
+
+const {
+  user,
+  membership,
+  companyId,
+} = context;
+
+const canImport =
+  user.platformRole === "SUPER_ADMIN" ||
+  Boolean(
+    membership.role?.permissions.some(
+      ({ permission }) =>
+        permission.key === "imports.manage",
+    ),
+  );
 
     if (!canImport) {
       return NextResponse.json(
@@ -192,8 +216,7 @@ export async function POST(
           {
             where: {
               companyId_gdnNumber: {
-                companyId:
-                  membership.companyId,
+                companyId,
                 gdnNumber,
               },
             },
@@ -368,8 +391,7 @@ export async function POST(
       } else {
         await prisma.goodsDespatchNote.create({
           data: {
-            companyId:
-              membership.companyId,
+            companyId,
             gdnNumber,
             salesOrderNumber,
             gdnDate,
@@ -399,9 +421,15 @@ export async function POST(
      * Refresh OdinIQ pages after new GDN
      * data has been written.
      */
-    revalidatePath("/commercial/customers", "layout");
-    revalidatePath("/despatch-audit", "layout");
+    revalidatePath(
+      "/commercial/customers",
+      "layout"
+    );
 
+    revalidatePath(
+      "/despatch-audit",
+      "layout"
+    );
 
     return NextResponse.json({
       success: true,

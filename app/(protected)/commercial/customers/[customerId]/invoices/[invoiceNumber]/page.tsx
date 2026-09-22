@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
 import { prisma } from "@/lib/prisma";
 
 type InvoiceDetailPageProps = {
@@ -14,8 +14,10 @@ type InvoiceDetailPageProps = {
 export default async function InvoiceDetailPage({
   params,
 }: InvoiceDetailPageProps) {
-  const user = await requireAuth();
-  const membership = user.memberships[0];
+  const {
+    membership,
+    companyId,
+  } = await requireCompanyContext();
 
   if (!membership) {
     throw new Error("No active company membership found.");
@@ -35,7 +37,7 @@ export default async function InvoiceDetailPage({
   const customer = await prisma.customer.findFirst({
     where: {
       id,
-      companyId: membership.companyId,
+      companyId,
       ...(isAgent
         ? {
             assignedMembershipId: membership.id,
@@ -50,7 +52,7 @@ export default async function InvoiceDetailPage({
 
   const invoice = await prisma.salesInvoice.findFirst({
     where: {
-      companyId: membership.companyId,
+      companyId,
       invoiceNumber,
       customerAccountCode: customer.accountCode,
     },
@@ -87,7 +89,7 @@ export default async function InvoiceDetailPage({
   const goodsDespatchNotes = invoice.salesOrderNumber
     ? await prisma.goodsDespatchNote.findMany({
         where: {
-          companyId: membership.companyId,
+          companyId,
           salesOrderNumber: invoice.salesOrderNumber,
         },
         include: {
@@ -513,3 +515,5 @@ export default async function InvoiceDetailPage({
     </main>
   );
 }
+
+

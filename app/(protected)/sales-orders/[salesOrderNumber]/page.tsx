@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
 import { prisma } from "@/lib/prisma";
 import WarehousePhotoUpload from "./WarehousePhotoUpload";
 import SalesOrderQrCode from "./SalesOrderQrCode";
@@ -16,11 +16,25 @@ type PageProps = {
 async function updateInvestigation(formData: FormData) {
   "use server";
 
-  const user = await requireAuth();
-  const membership = user.memberships[0];
+  const {
+    user,
+    membership,
+    companyId,
+  } = await requireCompanyContext();
 
-  if (!membership) {
-    throw new Error("No active company membership found.");
+  const canManageAudit =
+    user.platformRole === "SUPER_ADMIN" ||
+    Boolean(
+      membership.role?.permissions.some(
+        ({ permission }) =>
+          permission.key === "audit.manage"
+      )
+    );
+
+  if (!canManageAudit) {
+    throw new Error(
+      "You do not have permission to manage despatch investigations."
+    );
   }
 
   const salesOrderNumber = String(
@@ -42,7 +56,7 @@ async function updateInvestigation(formData: FormData) {
   await prisma.salesOrder.update({
     where: {
       companyId_salesOrderNumber: {
-        companyId: membership.companyId,
+        companyId: companyId,
         salesOrderNumber,
       },
     },
@@ -62,11 +76,25 @@ async function updateInvestigation(formData: FormData) {
 async function updateWarehouse(formData: FormData) {
   "use server";
 
-  const user = await requireAuth();
-  const membership = user.memberships[0];
+  const {
+    user,
+    membership,
+    companyId,
+  } = await requireCompanyContext();
 
-  if (!membership) {
-    throw new Error("No active company membership found.");
+  const canDispatchStock =
+    user.platformRole === "SUPER_ADMIN" ||
+    Boolean(
+      membership.role?.permissions.some(
+        ({ permission }) =>
+          permission.key === "stock.dispatch"
+      )
+    );
+
+  if (!canDispatchStock) {
+    throw new Error(
+      "You do not have permission to update warehouse progress."
+    );
   }
 
   const salesOrderNumber = String(
@@ -99,7 +127,7 @@ async function updateWarehouse(formData: FormData) {
 
 const existingOrder = await prisma.salesOrder.findFirst({
   where: {
-    companyId: membership.companyId,
+    companyId: companyId,
     salesOrderNumber,
   },
 });
@@ -110,7 +138,7 @@ if (!existingOrder) {
 
 const cancelledInvoice = await prisma.salesInvoice.findFirst({
   where: {
-    companyId: membership.companyId,
+    companyId: companyId,
     salesOrderNumber,
     customerOrderNumber: "cancelled",
   },
@@ -125,7 +153,7 @@ if (cancelledInvoice) {
   await prisma.salesOrder.update({
     where: {
       companyId_salesOrderNumber: {
-        companyId: membership.companyId,
+        companyId: companyId,
         salesOrderNumber,
       },
     },
@@ -144,18 +172,35 @@ if (cancelledInvoice) {
 export default async function SalesOrderDetailPage({
   params,
 }: PageProps) {
-  const user = await requireAuth();
-  const membership = user.memberships[0];
+  const {
+    user,
+    membership,
+    companyId,
+  } = await requireCompanyContext();
 
-  if (!membership) {
-    throw new Error("No active company membership found.");
-  }
+  const canManageAudit =
+    user.platformRole === "SUPER_ADMIN" ||
+    Boolean(
+      membership.role?.permissions.some(
+        ({ permission }) =>
+          permission.key === "audit.manage"
+      )
+    );
+
+  const canDispatchStock =
+    user.platformRole === "SUPER_ADMIN" ||
+    Boolean(
+      membership.role?.permissions.some(
+        ({ permission }) =>
+          permission.key === "stock.dispatch"
+      )
+    );
 
   const { salesOrderNumber } = await params;
 
   const salesOrder = await prisma.salesOrder.findFirst({
   where: {
-    companyId: membership.companyId,
+    companyId: companyId,
     salesOrderNumber,
   },
   include: {
@@ -173,7 +218,7 @@ export default async function SalesOrderDetailPage({
 
   const gdns = await prisma.goodsDespatchNote.findMany({
     where: {
-      companyId: membership.companyId,
+      companyId: companyId,
       salesOrderNumber,
     },
     include: {
@@ -186,7 +231,7 @@ export default async function SalesOrderDetailPage({
 
   const invoices = await prisma.salesInvoice.findMany({
     where: {
-      companyId: membership.companyId,
+      companyId: companyId,
       salesOrderNumber,
     },
     orderBy: {
@@ -215,7 +260,7 @@ export default async function SalesOrderDetailPage({
   ) {
     const matchingCustomer = await prisma.customer.findFirst({
       where: {
-        companyId: membership.companyId,
+        companyId: companyId,
         name: salesOrder.customerName,
       },
       select: {
@@ -490,7 +535,7 @@ export default async function SalesOrderDetailPage({
                   type="submit"
                   name="warehouseStatus"
                   value={stage.value}
-                  disabled={status === "CANCELLED"}
+                  disabled={status === "CANCELLED" || !canDispatchStock}
                   className={`rounded-xl border px-4 py-4 text-left transition ${
                     isCurrent
                       ? "border-amber-500 bg-amber-50 ring-2 ring-amber-200"
@@ -549,7 +594,8 @@ export default async function SalesOrderDetailPage({
               defaultValue={salesOrder.warehouseNote ?? ""}
               rows={3}
               placeholder="Add packing, stock, delivery or warehouse information..."
-              className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              disabled={!canDispatchStock}
+              className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
             />
 
             <p className="mt-2 text-xs text-slate-500">
@@ -568,7 +614,7 @@ export default async function SalesOrderDetailPage({
 
         <WarehousePhotoUpload
           salesOrderNumber={salesOrder.salesOrderNumber}
-          disabled={status === "CANCELLED"}
+          disabled={status === "CANCELLED" || !canDispatchStock}
         />
 
         {salesOrder.warehousePhotos.length > 0 && (
@@ -717,7 +763,8 @@ export default async function SalesOrderDetailPage({
               defaultValue={
                 salesOrder.investigationStatus ?? ""
               }
-              className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+              disabled={!canManageAudit}
+              className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
               key={
                 salesOrder.investigationStatus ??
                 "NOT_REVIEWED"
@@ -759,13 +806,15 @@ export default async function SalesOrderDetailPage({
               }
               rows={4}
               placeholder="Add any useful context..."
-              className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              disabled={!canManageAudit}
+              className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
             />
           </div>
 
           <button
             type="submit"
-            className="rounded-lg bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-700"
+            disabled={!canManageAudit}
+            className="rounded-lg bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300"
           >
             Save investigation
           </button>
@@ -958,3 +1007,5 @@ export default async function SalesOrderDetailPage({
     </main>
   );
 }
+
+

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
 import { prisma } from "@/lib/prisma";
 import AskOdin from "@/app/components/AskOdin";
 import { completeTask } from "@/app/actions/completeTask";
@@ -21,8 +21,10 @@ export const dynamic = "force-dynamic";
 export default async function CustomerPage({
   params,
 }: CustomerPageProps) {
-  const user = await requireAuth();
-  const membership = user.memberships[0];
+  const {
+    membership,
+    companyId,
+  } = await requireCompanyContext();
   const canManageCustomerOwnership =
   membership?.role?.name === "Company Admin" ||
   membership?.role?.name === "Accounts";
@@ -43,7 +45,7 @@ export default async function CustomerPage({
  const customer = await prisma.customer.findFirst({
   where: {
   id,
-  companyId: membership.companyId,
+  companyId: companyId,
 
   ...(isSalesAgent
     ? {
@@ -102,7 +104,7 @@ buyingGroupHistory: {
   }
 const teamMembers = await prisma.companyMembership.findMany({
   where: {
-    companyId: membership.companyId,
+    companyId: companyId,
     active: true,
   },
   include: {

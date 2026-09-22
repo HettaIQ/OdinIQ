@@ -57,5 +57,76 @@ export async function getCurrentUser() {
     return null;
   }
 
-  return session.user;
+  const memberships = session.user.memberships;
+
+  if (memberships.length === 0) {
+    return session.user;
+  }
+
+  let activeMembership = session.activeCompanyId
+    ? memberships.find(
+        (membership) =>
+          membership.companyId ===
+          session.activeCompanyId
+      )
+    : undefined;
+
+  /*
+   * Existing sessions do not yet have an
+   * activeCompanyId.
+   *
+   * If the user currently has only one active
+   * company membership, safely make that company
+   * the active company for this session.
+   */
+  if (!activeMembership && memberships.length === 1) {
+    activeMembership = memberships[0];
+
+    await prisma.session.update({
+      where: {
+        id: session.id,
+      },
+      data: {
+        activeCompanyId:
+          activeMembership.companyId,
+      },
+    });
+  }
+
+  /*
+   * If an activeCompanyId exists but the user no
+   * longer has access to that company, do not
+   * silently switch them into another tenant.
+   *
+   * This becomes especially important once Odin
+   * contains multiple customer companies.
+   */
+  if (!activeMembership) {
+    return {
+      ...session.user,
+      memberships: [],
+    };
+  }
+
+  /*
+   * Keep the active membership first.
+   *
+   * Existing Odin code that currently uses
+   * user.memberships[0] will therefore use the
+   * explicitly selected company while we migrate
+   * the application to the central company
+   * context.
+   */
+  const orderedMemberships = [
+    activeMembership,
+    ...memberships.filter(
+      (membership) =>
+        membership.id !== activeMembership.id
+    ),
+  ];
+
+  return {
+    ...session.user,
+    memberships: orderedMemberships,
+  };
 }

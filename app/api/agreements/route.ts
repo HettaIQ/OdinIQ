@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+
+import { getApiCompanyContext } from "@/lib/auth/getApiCompanyContext";
 import { prisma } from "@/lib/prisma";
 
 function optionalText(value: unknown): string | null {
@@ -30,6 +32,65 @@ function optionalDate(value: unknown): Date | null {
 
 export async function POST(request: Request) {
   try {
+    const context =
+  await getApiCompanyContext();
+
+if (
+  context.status ===
+  "UNAUTHENTICATED"
+) {
+  return NextResponse.json(
+    {
+      success: false,
+      message:
+        "You must be signed in.",
+    },
+    { status: 401 }
+  );
+}
+
+if (
+  context.status ===
+  "NO_COMPANY"
+) {
+  return NextResponse.json(
+    {
+      success: false,
+      message:
+        "No active company membership was found.",
+    },
+    { status: 403 }
+  );
+}
+
+const {
+  user,
+  membership,
+  companyId,
+} = context;
+
+const canManageAgreements =
+  user.platformRole === "SUPER_ADMIN" ||
+  Boolean(
+    membership.role?.permissions.some(
+      ({ permission }) =>
+        permission.key === "agreements.manage",
+    ),
+  );
+
+if (!canManageAgreements) {
+  return NextResponse.json(
+    {
+      success: false,
+      message:
+        "You do not have permission to create commercial agreements.",
+    },
+    {
+      status: 403,
+    },
+  );
+}
+
     const body = await request.json();
 
     const customerName = String(body.customerName ?? "").trim();
@@ -47,6 +108,7 @@ export async function POST(request: Request) {
 
     const agreement = await prisma.commercialAgreement.create({
       data: {
+        companyId,
         customerName,
         agreementName,
         agreementType: optionalText(body.agreementType),

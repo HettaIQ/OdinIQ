@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+
+import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
 import { prisma } from "@/lib/prisma";
+
 import DocumentUpload from "./DocumentUpload";
 import DocumentMover from "./DocumentMover";
 import AnalyseAgreementButton from "./AnalyseAgreementButton";
@@ -17,6 +20,10 @@ type AgreementDetailPageProps = {
 export default async function AgreementDetailPage({
   params,
 }: AgreementDetailPageProps) {
+  const {
+    companyId,
+  } = await requireCompanyContext();
+
   const { id } = await params;
   const agreementId = Number(id);
 
@@ -24,46 +31,58 @@ export default async function AgreementDetailPage({
     notFound();
   }
 
-  const agreement = await prisma.commercialAgreement.findUnique({
-    where: {
-      id: agreementId,
-    },
-    include: {
-      documents: {
-        orderBy: {
-          uploadedAt: "desc",
+  const agreement =
+    await prisma.commercialAgreement.findFirst({
+      where: {
+        id: agreementId,
+        companyId: companyId,
+      },
+      include: {
+        documents: {
+          orderBy: {
+            uploadedAt: "desc",
+          },
+        },
+        discounts: {
+          orderBy: {
+            name: "asc",
+          },
+        },
+        rebates: {
+          orderBy: {
+            name: "asc",
+          },
         },
       },
-      discounts: {
-        orderBy: {
-          name: "asc",
-        },
-      },
-      rebates: {
-        orderBy: {
-          name: "asc",
-        },
-      },
-    },
-  });
+    });
 
   if (!agreement) {
     notFound();
   }
-const agreementOptions = await prisma.commercialAgreement.findMany({
-  select: {
-    id: true,
-    customerName: true,
-    agreementName: true,
-  },
-  orderBy: {
-    customerName: "asc",
-  },
-});
 
-  const marketingBudget = agreement.marketingBudget ?? 0;
-  const marketingSpend = agreement.marketingSpend ?? 0;
-  const marketingRemaining = marketingBudget - marketingSpend;
+  const agreementOptions =
+    await prisma.commercialAgreement.findMany({
+      where: {
+        companyId: companyId,
+      },
+      select: {
+        id: true,
+        customerName: true,
+        agreementName: true,
+      },
+      orderBy: {
+        customerName: "asc",
+      },
+    });
+
+  const marketingBudget =
+    agreement.marketingBudget ?? 0;
+
+  const marketingSpend =
+    agreement.marketingSpend ?? 0;
+
+  const marketingRemaining =
+    marketingBudget - marketingSpend;
 
   return (
     <main
@@ -153,28 +172,38 @@ const agreementOptions = await prisma.commercialAgreement.findMany({
         >
           <MetricCard
             label="Standard Discount"
-            value={formatPercent(agreement.standardDiscount)}
+            value={formatPercent(
+              agreement.standardDiscount
+            )}
           />
 
           <MetricCard
             label="Rebate"
-            value={formatPercent(agreement.rebatePercent)}
+            value={formatPercent(
+              agreement.rebatePercent
+            )}
           />
 
           <MetricCard
             label="Marketing Budget"
-            value={formatCurrency(agreement.marketingBudget)}
+            value={formatCurrency(
+              agreement.marketingBudget
+            )}
           />
 
           <MetricCard
             label="Budget Remaining"
-            value={formatCurrency(marketingRemaining)}
+            value={formatCurrency(
+              marketingRemaining
+            )}
             warning={marketingRemaining < 0}
           />
 
           <MetricCard
             label="Documents"
-            value={String(agreement.documents.length)}
+            value={String(
+              agreement.documents.length
+            )}
           />
         </section>
 
@@ -188,7 +217,9 @@ const agreementOptions = await prisma.commercialAgreement.findMany({
           }}
         >
           <div style={panelStyle}>
-            <h2 style={{ marginTop: 0 }}>Agreement Overview</h2>
+            <h2 style={{ marginTop: 0 }}>
+              Agreement Overview
+            </h2>
 
             <InformationRow
               label="Customer"
@@ -202,7 +233,10 @@ const agreementOptions = await prisma.commercialAgreement.findMany({
 
             <InformationRow
               label="Type"
-              value={agreement.agreementType ?? "Not set"}
+              value={
+                agreement.agreementType ??
+                "Not set"
+              }
             />
 
             <InformationRow
@@ -212,77 +246,110 @@ const agreementOptions = await prisma.commercialAgreement.findMany({
 
             <InformationRow
               label="Start Date"
-              value={formatDate(agreement.startDate)}
+              value={formatDate(
+                agreement.startDate
+              )}
             />
 
             <InformationRow
               label="End Date"
-              value={formatDate(agreement.endDate)}
+              value={formatDate(
+                agreement.endDate
+              )}
             />
 
             <InformationRow
               label="Renewal Date"
-              value={formatDate(agreement.renewalDate)}
+              value={formatDate(
+                agreement.renewalDate
+              )}
             />
 
             <InformationRow
               label="Notice Period"
-              value={agreement.noticePeriod ?? "Not set"}
+              value={
+                agreement.noticePeriod ??
+                "Not set"
+              }
             />
 
             <InformationRow
               label="Account Manager"
-              value={agreement.accountManager ?? "Not set"}
+              value={
+                agreement.accountManager ??
+                "Not set"
+              }
             />
 
             <InformationRow
               label="Buying Group"
-              value={agreement.buyingGroup ?? "Not set"}
+              value={
+                agreement.buyingGroup ??
+                "Not set"
+              }
+            />
+
+            <AgreementBuyingGroupEditor
+              agreementId={agreement.id}
+              initialBuyingGroup={
+                agreement.buyingGroup
+              }
             />
           </div>
 
-
-<AgreementBuyingGroupEditor
-  agreementId={agreement.id}
-  initialBuyingGroup={agreement.buyingGroup}
-/>
-
           <div style={panelStyle}>
-            <h2 style={{ marginTop: 0 }}>Commercial Terms</h2>
+            <h2 style={{ marginTop: 0 }}>
+              Commercial Terms
+            </h2>
 
             <InformationRow
               label="Discount"
-              value={formatPercent(agreement.standardDiscount)}
+              value={formatPercent(
+                agreement.standardDiscount
+              )}
             />
 
             <InformationRow
               label="Rebate"
-              value={formatPercent(agreement.rebatePercent)}
+              value={formatPercent(
+                agreement.rebatePercent
+              )}
             />
 
             <InformationRow
               label="Payment Terms"
-              value={agreement.paymentTerms ?? "Not set"}
+              value={
+                agreement.paymentTerms ??
+                "Not set"
+              }
             />
 
             <InformationRow
               label="Credit Limit"
-              value={formatCurrency(agreement.creditLimit)}
+              value={formatCurrency(
+                agreement.creditLimit
+              )}
             />
 
             <InformationRow
               label="Marketing Budget"
-              value={formatCurrency(agreement.marketingBudget)}
+              value={formatCurrency(
+                agreement.marketingBudget
+              )}
             />
 
             <InformationRow
               label="Marketing Spend"
-              value={formatCurrency(agreement.marketingSpend)}
+              value={formatCurrency(
+                agreement.marketingSpend
+              )}
             />
 
             <InformationRow
               label="Budget Remaining"
-              value={formatCurrency(marketingRemaining)}
+              value={formatCurrency(
+                marketingRemaining
+              )}
             />
           </div>
         </section>
@@ -293,8 +360,13 @@ const agreementOptions = await prisma.commercialAgreement.findMany({
             ...panelStyle,
           }}
         >
-            <AnalyseAgreementButton agreementId={agreement.id} />
-          <h2 style={{ marginTop: 0 }}>Odin Analysis</h2>
+          <AnalyseAgreementButton
+            agreementId={agreement.id}
+          />
+
+          <h2 style={{ marginTop: 0 }}>
+            Odin Analysis
+          </h2>
 
           <div
             style={{
@@ -310,19 +382,23 @@ const agreementOptions = await prisma.commercialAgreement.findMany({
                 agreement.endDate,
                 agreement.renewalDate
               )}
-              warning={isRenewalDueSoon(agreement.renewalDate)}
+              warning={isRenewalDueSoon(
+                agreement.renewalDate
+              )}
             />
 
             <Recommendation
               title="Commercial terms"
               text={
-                agreement.standardDiscount === null ||
+                agreement.standardDiscount ===
+                  null ||
                 agreement.rebatePercent === null
                   ? "Some core commercial terms are still missing."
                   : "Standard discount and rebate are both recorded."
               }
               warning={
-                agreement.standardDiscount === null ||
+                agreement.standardDiscount ===
+                  null ||
                 agreement.rebatePercent === null
               }
             />
@@ -330,11 +406,15 @@ const agreementOptions = await prisma.commercialAgreement.findMany({
             <Recommendation
               title="Document library"
               text={
-                agreement.documents.length === 0
+                agreement.documents.length ===
+                0
                   ? "No contract documents have been uploaded yet."
                   : `${agreement.documents.length} agreement documents are stored.`
               }
-              warning={agreement.documents.length === 0}
+              warning={
+                agreement.documents.length ===
+                0
+              }
             />
 
             <Recommendation
@@ -344,13 +424,18 @@ const agreementOptions = await prisma.commercialAgreement.findMany({
                   ? "No marketing budget has been recorded."
                   : marketingRemaining < 0
                     ? `Marketing spend exceeds the agreed budget by ${formatCurrency(
-                        Math.abs(marketingRemaining)
+                        Math.abs(
+                          marketingRemaining
+                        )
                       )}.`
                     : `${formatCurrency(
                         marketingRemaining
                       )} remains from the agreed marketing budget.`
               }
-              warning={marketingBudget === 0 || marketingRemaining < 0}
+              warning={
+                marketingBudget === 0 ||
+                marketingRemaining < 0
+              }
             />
           </div>
         </section>
@@ -363,74 +448,112 @@ const agreementOptions = await prisma.commercialAgreement.findMany({
         >
           <div style={sectionHeaderStyle}>
             <div>
-              <h2 style={{ marginTop: 0, marginBottom: "6px" }}>
+              <h2
+                style={{
+                  marginTop: 0,
+                  marginBottom: "6px",
+                }}
+              >
                 Agreement Documents
               </h2>
 
-              <p style={{ color: "#999999", margin: 0 }}>
-                Contracts, pricing schedules, rebate documents and
-                marketing agreements.
+              <p
+                style={{
+                  color: "#999999",
+                  margin: 0,
+                }}
+              >
+                Contracts, pricing schedules,
+                rebate documents and marketing
+                agreements.
               </p>
             </div>
 
-            <span style={{ color: "#d4af37", fontWeight: "bold" }}>
+            <span
+              style={{
+                color: "#d4af37",
+                fontWeight: "bold",
+              }}
+            >
               {agreement.documents.length} files
             </span>
           </div>
-<DocumentUpload agreementId={agreement.id} />
+
+          <DocumentUpload
+            agreementId={agreement.id}
+          />
+
           {agreement.documents.length > 0 ? (
             <div style={{ marginTop: "20px" }}>
-              {agreement.documents.map((document) => (
-                <div
-                  key={document.id}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr auto",
-                    gap: "16px",
-                    padding: "16px",
-                    background: "#0b0b0f",
-                    border: "1px solid #292929",
-                    borderRadius: "10px",
-                    marginTop: "10px",
-                  }}
-                >
-                  <div>
-                    <a
-  href={`/uploads/agreements/${agreement.id}/${document.fileName}`}
-  target="_blank"
-  rel="noopener noreferrer"
-  style={{
-    color: "#d4af37",
-    textDecoration: "none",
-    fontWeight: "bold",
-  }}
->
-  {document.originalName}
-</a>
+              {agreement.documents.map(
+                (document) => (
+                  <div
+                    key={document.id}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "1fr auto",
+                      gap: "16px",
+                      padding: "16px",
+                      background: "#0b0b0f",
+                      border:
+                        "1px solid #292929",
+                      borderRadius: "10px",
+                      marginTop: "10px",
+                    }}
+                  >
+                    <div>
+                      <a
+                        href={`/uploads/agreements/${agreement.id}/${document.fileName}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          color: "#d4af37",
+                          textDecoration: "none",
+                          fontWeight: "bold",
+                        }}
+                      >
+                        {document.originalName}
+                      </a>
 
-                    <p
+                      <p
+                        style={{
+                          color: "#999999",
+                          marginTop: "7px",
+                          marginBottom: 0,
+                        }}
+                      >
+                        {document.category ??
+                          "Uncategorised"}{" "}
+                        ·{" "}
+                        {formatFileSize(
+                          document.fileSize
+                        )}
+                      </p>
+
+                      <DocumentMover
+                        documentId={document.id}
+                        currentAgreementId={
+                          agreement.id
+                        }
+                        agreements={
+                          agreementOptions
+                        }
+                      />
+                    </div>
+
+                    <span
                       style={{
                         color: "#999999",
-                        marginTop: "7px",
-                        marginBottom: 0,
                       }}
                     >
-                       {document.category ?? "Uncategorised"} ·{" "}
-  {formatFileSize(document.fileSize)}
-</p>
-
-<DocumentMover
-  documentId={document.id}
-  currentAgreementId={agreement.id}
-  agreements={agreementOptions}
-/>
+                      {document.uploadedAt.toLocaleDateString(
+                        "en-GB"
+                      )}
+                    </span>
                   </div>
-
-                  <span style={{ color: "#999999" }}>
-                    {document.uploadedAt.toLocaleDateString("en-GB")}
-                  </span>
-                </div>
-              ))}
+                )
+              )}
             </div>
           ) : (
             <EmptyPanel text="No documents have been uploaded for this agreement." />
@@ -448,19 +571,40 @@ const agreementOptions = await prisma.commercialAgreement.findMany({
         >
           <div style={panelStyle}>
             <div style={sectionHeaderStyle}>
-              <h2 style={{ margin: 0 }}>Discount Schedules</h2>
-              <span style={{ color: "#d4af37" }}>
+              <h2 style={{ margin: 0 }}>
+                Discount Schedules
+              </h2>
+
+              <span
+                style={{
+                  color: "#d4af37",
+                }}
+              >
                 {agreement.discounts.length}
               </span>
             </div>
 
-            {agreement.discounts.length > 0 ? (
-              agreement.discounts.map((discount) => (
-                <div key={discount.id} style={listItemStyle}>
-                  <strong>{discount.name}</strong>
-                  <span>{discount.discount.toFixed(1)}%</span>
-                </div>
-              ))
+            {agreement.discounts.length >
+            0 ? (
+              agreement.discounts.map(
+                (discount) => (
+                  <div
+                    key={discount.id}
+                    style={listItemStyle}
+                  >
+                    <strong>
+                      {discount.name}
+                    </strong>
+
+                    <span>
+                      {discount.discount.toFixed(
+                        1
+                      )}
+                      %
+                    </span>
+                  </div>
+                )
+              )
             ) : (
               <EmptyPanel text="No special discount schedules recorded." />
             )}
@@ -468,19 +612,38 @@ const agreementOptions = await prisma.commercialAgreement.findMany({
 
           <div style={panelStyle}>
             <div style={sectionHeaderStyle}>
-              <h2 style={{ margin: 0 }}>Rebate Schemes</h2>
-              <span style={{ color: "#d4af37" }}>
+              <h2 style={{ margin: 0 }}>
+                Rebate Schemes
+              </h2>
+
+              <span
+                style={{
+                  color: "#d4af37",
+                }}
+              >
                 {agreement.rebates.length}
               </span>
             </div>
 
             {agreement.rebates.length > 0 ? (
-              agreement.rebates.map((rebate) => (
-                <div key={rebate.id} style={listItemStyle}>
-                  <strong>{rebate.name}</strong>
-                  <span>{formatPercent(rebate.rebatePercent)}</span>
-                </div>
-              ))
+              agreement.rebates.map(
+                (rebate) => (
+                  <div
+                    key={rebate.id}
+                    style={listItemStyle}
+                  >
+                    <strong>
+                      {rebate.name}
+                    </strong>
+
+                    <span>
+                      {formatPercent(
+                        rebate.rebatePercent
+                      )}
+                    </span>
+                  </div>
+                )
+              )
             ) : (
               <EmptyPanel text="No tiered rebate schemes recorded." />
             )}
@@ -493,7 +656,9 @@ const agreementOptions = await prisma.commercialAgreement.findMany({
             ...panelStyle,
           }}
         >
-          <h2 style={{ marginTop: 0 }}>Commercial Notes</h2>
+          <h2 style={{ marginTop: 0 }}>
+            Commercial Notes
+          </h2>
 
           <div
             style={{
@@ -506,7 +671,8 @@ const agreementOptions = await prisma.commercialAgreement.findMany({
               whiteSpace: "pre-wrap",
             }}
           >
-            {agreement.notes ?? "No commercial notes have been added."}
+            {agreement.notes ??
+              "No commercial notes have been added."}
           </div>
         </section>
       </div>
@@ -526,7 +692,9 @@ function MetricCard({
   return (
     <div
       style={{
-        background: warning ? "#211e12" : "#151515",
+        background: warning
+          ? "#211e12"
+          : "#151515",
         border: warning
           ? "1px solid #66571d"
           : "1px solid #2b2b2b",
@@ -534,14 +702,23 @@ function MetricCard({
         padding: "22px",
       }}
     >
-      <p style={{ color: "#999999", margin: 0 }}>{label}</p>
+      <p
+        style={{
+          color: "#999999",
+          margin: 0,
+        }}
+      >
+        {label}
+      </p>
 
       <h2
         style={{
           fontSize: "28px",
           marginTop: "12px",
           marginBottom: 0,
-          color: warning ? "#d4af37" : "#ffffff",
+          color: warning
+            ? "#d4af37"
+            : "#ffffff",
         }}
       >
         {value}
@@ -561,13 +738,22 @@ function InformationRow({
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "150px 1fr",
+        gridTemplateColumns:
+          "150px 1fr",
         gap: "16px",
         padding: "14px 0",
-        borderBottom: "1px solid #242424",
+        borderBottom:
+          "1px solid #242424",
       }}
     >
-      <span style={{ color: "#999999" }}>{label}</span>
+      <span
+        style={{
+          color: "#999999",
+        }}
+      >
+        {label}
+      </span>
+
       <strong>{value}</strong>
     </div>
   );
@@ -586,14 +772,22 @@ function Recommendation({
     <div
       style={{
         padding: "16px",
-        background: warning ? "#211e12" : "#0b0b0f",
+        background: warning
+          ? "#211e12"
+          : "#0b0b0f",
         border: warning
           ? "1px solid #66571d"
           : "1px solid #292929",
         borderRadius: "10px",
       }}
     >
-      <strong style={{ color: "#d4af37" }}>{title}</strong>
+      <strong
+        style={{
+          color: "#d4af37",
+        }}
+      >
+        {title}
+      </strong>
 
       <p
         style={{
@@ -608,7 +802,11 @@ function Recommendation({
   );
 }
 
-function EmptyPanel({ text }: { text: string }) {
+function EmptyPanel({
+  text,
+}: {
+  text: string;
+}) {
   return (
     <div
       style={{
@@ -626,16 +824,25 @@ function EmptyPanel({ text }: { text: string }) {
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const active = status.toLowerCase() === "active";
+function StatusBadge({
+  status,
+}: {
+  status: string;
+}) {
+  const active =
+    status.toLowerCase() === "active";
 
   return (
     <span
       style={{
         padding: "8px 13px",
         borderRadius: "999px",
-        background: active ? "#18351d" : "#3a2d16",
-        color: active ? "#6eeb83" : "#f4c95d",
+        background: active
+          ? "#18351d"
+          : "#3a2d16",
+        color: active
+          ? "#6eeb83"
+          : "#f4c95d",
         fontWeight: "bold",
         fontSize: "13px",
       }}
@@ -645,7 +852,9 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function formatCurrency(value: number | null): string {
+function formatCurrency(
+  value: number | null
+): string {
   if (value === null) return "—";
 
   return new Intl.NumberFormat("en-GB", {
@@ -654,36 +863,57 @@ function formatCurrency(value: number | null): string {
   }).format(value);
 }
 
-function formatPercent(value: number | null): string {
+function formatPercent(
+  value: number | null
+): string {
   if (value === null) return "—";
 
   return `${value.toFixed(1)}%`;
 }
 
-function formatDate(value: Date | null): string {
+function formatDate(
+  value: Date | null
+): string {
   if (value === null) return "—";
 
   return value.toLocaleDateString("en-GB");
 }
 
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
+function formatFileSize(
+  bytes: number
+): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
   }
 
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(
+      1
+    )} KB`;
+  }
+
+  return `${(
+    bytes /
+    (1024 * 1024)
+  ).toFixed(1)} MB`;
 }
 
-function isRenewalDueSoon(renewalDate: Date | null): boolean {
+function isRenewalDueSoon(
+  renewalDate: Date | null
+): boolean {
   if (!renewalDate) return false;
 
   const today = new Date();
   const ninetyDays = new Date();
-  ninetyDays.setDate(today.getDate() + 90);
 
-  return renewalDate >= today && renewalDate <= ninetyDays;
+  ninetyDays.setDate(
+    today.getDate() + 90
+  );
+
+  return (
+    renewalDate >= today &&
+    renewalDate <= ninetyDays
+  );
 }
 
 function getDateRecommendation(
@@ -694,15 +924,24 @@ function getDateRecommendation(
     return "No expiry or renewal date has been recorded.";
   }
 
-  if (renewalDate && isRenewalDueSoon(renewalDate)) {
-    return `Renewal is due on ${formatDate(renewalDate)}.`;
+  if (
+    renewalDate &&
+    isRenewalDueSoon(renewalDate)
+  ) {
+    return `Renewal is due on ${formatDate(
+      renewalDate
+    )}.`;
   }
 
   if (renewalDate) {
-    return `Next renewal is recorded for ${formatDate(renewalDate)}.`;
+    return `Next renewal is recorded for ${formatDate(
+      renewalDate
+    )}.`;
   }
 
-  return `The agreement ends on ${formatDate(endDate)}.`;
+  return `The agreement ends on ${formatDate(
+    endDate
+  )}.`;
 }
 
 const panelStyle = {

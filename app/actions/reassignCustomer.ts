@@ -2,75 +2,110 @@
 
 import { revalidatePath } from "next/cache";
 
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
 import { prisma } from "@/lib/prisma";
 
 export async function reassignCustomer(formData: FormData) {
-  const user = await requireAuth();
-  const membership = user.memberships[0];
+  const {
+    user,
+    membership,
+    companyId,
+  } = await requireCompanyContext();
 
-  if (!membership) {
-    throw new Error("No active company membership found.");
-  }
+  const canReassignCustomers =
+    user.platformRole === "SUPER_ADMIN" ||
+    Boolean(
+      membership.role?.permissions.some(
+        ({ permission }) =>
+          permission.key === "customers.reassign"
+      )
+    );
 
-  if (
-    membership.role?.name !== "Company Admin" &&
-    membership.role?.name !== "Accounts"
-  ) {
+  if (!canReassignCustomers) {
     throw new Error(
       "You do not have permission to reassign customer accounts."
     );
   }
 
-  const customerId = Number(formData.get("customerId"));
+  const customerId = Number(
+    formData.get("customerId")
+  );
+
   const assignedMembershipId = Number(
     formData.get("assignedMembershipId")
   );
 
   if (!Number.isInteger(customerId)) {
-    throw new Error("A valid customer ID is required.");
+    throw new Error(
+      "A valid customer ID is required."
+    );
   }
 
   if (!Number.isInteger(assignedMembershipId)) {
-    throw new Error("A valid team member is required.");
+    throw new Error(
+      "A valid team member is required."
+    );
   }
 
+  /*
+   * The customer must belong to the
+   * currently selected company.
+   */
   const customer = await prisma.customer.findFirst({
     where: {
       id: customerId,
-      companyId: membership.companyId,
+      companyId,
     },
   });
 
   if (!customer) {
-    throw new Error("Customer not found.");
+    throw new Error(
+      "Customer not found."
+    );
   }
 
-  const newOwner = await prisma.companyMembership.findFirst({
-    where: {
-      id: assignedMembershipId,
-      companyId: membership.companyId,
-      active: true,
-    },
-    include: {
-      user: true,
-    },
-  });
+  /*
+   * The new owner must be an active
+   * membership of the same company.
+   *
+   * This prevents a membership ID from
+   * another OdinIQ tenant being submitted.
+   */
+  const newOwner =
+    await prisma.companyMembership.findFirst({
+      where: {
+        id: assignedMembershipId,
+        companyId,
+        active: true,
+      },
+      include: {
+        user: true,
+      },
+    });
 
   if (!newOwner) {
-    throw new Error("Selected team member was not found.");
+    throw new Error(
+      "Selected team member was not found."
+    );
   }
 
-  if (customer.assignedMembershipId === assignedMembershipId) {
+  if (
+    customer.assignedMembershipId ===
+    assignedMembershipId
+  ) {
     return;
   }
 
   const effectiveFrom = new Date();
 
   await prisma.$transaction(async (tx) => {
+    /*
+     * CustomerAgentHistory is reached through
+     * the already validated customer ID.
+     */
     await tx.customerAgentHistory.updateMany({
       where: {
-        customerId,
+        customerId: customer.id,
         effectiveTo: null,
       },
       data: {
@@ -80,8 +115,8 @@ export async function reassignCustomer(formData: FormData) {
 
     await tx.customerAgentHistory.create({
       data: {
-        customerId,
-        membershipId: assignedMembershipId,
+        customerId: customer.id,
+        membershipId: newOwner.id,
         agentName:
           newOwner.user.name ??
           newOwner.user.email ??
@@ -90,19 +125,37 @@ export async function reassignCustomer(formData: FormData) {
       },
     });
 
+    /*
+     * Update the customer we already proved
+     * belongs to the active company.
+     */
     await tx.customer.update({
       where: {
-        id: customerId,
+        id: customer.id,
       },
       data: {
-        assignedMembershipId,
+        assignedMembershipId: newOwner.id,
       },
     });
   });
 
-  revalidatePath(`/commercial/customers/${customerId}`);
-  revalidatePath("/commercial/customers");
+  revalidatePath(
+    `/commercial/customers/${customer.id}`
+  );
+
+  revalidatePath(
+    "/commercial/customers"
+  );
+
   revalidatePath("/team");
-  revalidatePath(`/team/${customer.assignedMembershipId}`);
-  revalidatePath(`/team/${assignedMembershipId}`);
+
+  if (customer.assignedMembershipId) {
+    revalidatePath(
+      `/team/${customer.assignedMembershipId}`
+    );
+  }
+
+  revalidatePath(
+    `/team/${newOwner.id}`
+  );
 }

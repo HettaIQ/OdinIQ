@@ -1,17 +1,12 @@
 import Link from "next/link";
 
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
 import CustomerImportUploader from "./CustomerImportUploader";
 
 export const dynamic = "force-dynamic";
 
 export default async function CustomerImportPage() {
-  const user = await requireAuth();
-  const membership = user.memberships[0];
-
-  if (!membership) {
-    throw new Error("No active company membership found.");
-  }
+  await requireCompanyContext();
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-8">

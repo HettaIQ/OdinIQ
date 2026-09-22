@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -19,8 +19,11 @@ export default async function ProductDetailPage({
   params,
   searchParams,
 }: ProductDetailPageProps) {
-  const user = await requireAuth();
-  const membership = user.memberships[0];
+  const {
+    user,
+    membership,
+    companyId,
+  } = await requireCompanyContext();
 
   if (!membership) {
     return (
@@ -87,23 +90,16 @@ export default async function ProductDetailPage({
     decodeURIComponent(productCode);
 
   const product =
-    await prisma.product.findFirst({
-      where: {
-        productCode:
-          decodedProductCode,
+  await prisma.product.findFirst({
+    where: {
+      productCode:
+        decodedProductCode,
 
-        OR: [
-          {
-            companyId:
-              membership.companyId,
-          },
-          {
-            companyId: null,
-          },
-        ],
-      },
+      companyId:
+        companyId,
+    },
 
-      include: {
+    include: {
         merchantPrices:
           canViewCommercialProductData
             ? {
@@ -201,7 +197,7 @@ export default async function ProductDetailPage({
     await prisma.productAlias.findMany({
       where: {
         companyId:
-          membership.companyId,
+          companyId,
 
         productId:
           product.id,
@@ -236,7 +232,7 @@ export default async function ProductDetailPage({
 
         salesInvoice: {
           companyId:
-            membership.companyId,
+            companyId,
 
           invoiceDate: {
             lt: currentEnd,

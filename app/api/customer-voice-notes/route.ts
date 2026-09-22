@@ -4,7 +4,7 @@ import fs from "fs";
 import path from "path";
 import OpenAI from "openai";
 import { prisma } from "@/lib/prisma";
-import { requireAuth } from "@/lib/auth/requireAuth";
+import { getApiCompanyContext } from "@/lib/auth/getApiCompanyContext";
 
 export const runtime = "nodejs";
 const openai = new OpenAI({
@@ -13,9 +13,50 @@ const openai = new OpenAI({
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireAuth();
+    const context = await getApiCompanyContext();
 
-    const formData = await request.formData();
+    if (context.status === "UNAUTHENTICATED") {
+      return NextResponse.json(
+        { error: "Unauthenticated." },
+        { status: 401 }
+      );
+    }
+
+    if (context.status === "NO_COMPANY") {
+      return NextResponse.json(
+        { error: "No active company selected." },
+        { status: 403 }
+      );
+    }
+
+    const {
+  user,
+  membership,
+  companyId,
+} = context;
+
+const canCreateVoiceNotes =
+  user.platformRole === "SUPER_ADMIN" ||
+  Boolean(
+    membership.role?.permissions.some(
+      ({ permission }) =>
+        permission.key === "voice_notes.create",
+    ),
+  );
+
+if (!canCreateVoiceNotes) {
+  return NextResponse.json(
+    {
+      error:
+        "You do not have permission to add customer voice notes.",
+    },
+    {
+      status: 403,
+    },
+  );
+}
+
+const formData = await request.formData();
 
     const customerId = Number(formData.get("customerId"));
     const audio = formData.get("audio");
@@ -29,25 +70,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const membership = await prisma.companyMembership.findFirst({
-      where: {
-        userId: user.id,
-      },
-    });
-
-    if (!membership) {
-      return NextResponse.json(
-        {
-          error: "Company membership could not be found.",
-        },
-        { status: 403 }
-      );
-    }
-
     const customer = await prisma.customer.findFirst({
       where: {
         id: customerId,
-        companyId: membership.companyId,
+        companyId: companyId,
       },
     });
 
@@ -191,7 +217,7 @@ const audioUrl = `/uploads/voice-notes/${fileName}`;
 
 const voiceNote = await prisma.customerVoiceNote.create({
   data: {
-  companyId: membership.companyId,
+  companyId: companyId,
   customerId: customer.id,
   createdByMembershipId: membership.id,
   audioUrl,
@@ -234,3 +260,5 @@ const voiceNote = await prisma.customerVoiceNote.create({
     );
   }
 }
+
+
