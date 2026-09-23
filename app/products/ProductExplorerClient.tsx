@@ -615,7 +615,24 @@ export default function ProductExplorerClient({
             >
               {supplier}
             </strong>
-
+<a
+  href={`/api/products/supplier-seasonality?supplier=${encodeURIComponent(
+    supplier
+  )}`}
+  style={{
+    border: "1px solid #66571d",
+    background: "#211e12",
+    color: "#d4af37",
+    borderRadius: "8px",
+    padding: "6px 10px",
+    cursor: "pointer",
+    textDecoration: "none",
+    fontWeight: 600,
+    fontSize: "14px",
+  }}
+>
+  Download Seasonality CSV
+</a>
             <button
               type="button"
               onClick={() => {
