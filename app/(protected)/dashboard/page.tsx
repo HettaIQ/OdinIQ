@@ -6,6 +6,7 @@ import { completeTask } from "@/app/actions/completeTask";
 import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
 import { commercialNetValue } from "@/lib/commercialSales";
 import { prisma } from "@/lib/prisma";
+import { getCommercialIntelligence } from "@/lib/odin/commercialIntelligence";
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-GB", {
@@ -66,6 +67,9 @@ export default async function DashboardPage() {
     membership,
     companyId,
   } = await requireCompanyContext();
+
+  const intelligenceSignals =
+  await getCommercialIntelligence(companyId);
 
   const now = new Date();
 
@@ -527,7 +531,9 @@ export default async function DashboardPage() {
         )}
       </section>
 
-      <OdinIntelligence />
+      <OdinIntelligence
+  signals={intelligenceSignals}
+/>
     </div>
   );
 }

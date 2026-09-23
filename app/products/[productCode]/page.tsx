@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
 import { prisma } from "@/lib/prisma";
+import ProductSeasonalityCsvButton from "@/app/components/ProductSeasonalityCsvButton";
 
 export const dynamic = "force-dynamic";
 
@@ -1660,6 +1661,12 @@ export default async function ProductDetailPage({
                     ? strongestMonth.month
                     : "—"}
                 </strong>
+                <ProductSeasonalityCsvButton
+  productCode={product.productCode}
+  previousYear={previousYear}
+  currentYear={currentYear}
+  rows={seasonalMonths}
+/>
               </div>
             </div>
 

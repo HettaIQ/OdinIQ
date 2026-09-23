@@ -2,9 +2,10 @@ import Link from "next/link";
 
 import { prisma } from "@/lib/prisma";
 import { requireSuperAdmin } from "@/lib/auth/requireSuperAdmin";
+import { switchCompany } from "@/app/actions/switchCompany";
 
 export default async function CompaniesPage() {
-  await requireSuperAdmin();
+  const user = await requireSuperAdmin();
 
   const companies = await prisma.company.findMany({
     orderBy: {
@@ -22,6 +23,25 @@ export default async function CompaniesPage() {
       },
     },
   });
+
+  /*
+   * A SUPER_ADMIN can see every company in HQ,
+   * but may only enter companies where they have
+   * an active CompanyMembership.
+   *
+   * switchCompany() performs the same validation
+   * again server-side before changing the session.
+   */
+  const accessibleCompanyIds = new Set(
+    companies
+      .filter((company) =>
+        company.memberships.some(
+          (membership) =>
+            membership.userId === user.id
+        )
+      )
+      .map((company) => company.id)
+  );
 
   return (
     <div className="space-y-8">
@@ -72,16 +92,26 @@ export default async function CompaniesPage() {
                 <th className="px-6 py-4 font-medium">
                   Slug
                 </th>
+
+                <th className="px-6 py-4 text-right font-medium">
+                  Access
+                </th>
               </tr>
             </thead>
 
             <tbody className="divide-y divide-slate-800">
               {companies.map((company) => {
-                const admins = company.memberships.filter(
-                  (membership) =>
-                    membership.role?.name ===
-                    "Company Admin"
-                );
+                const admins =
+                  company.memberships.filter(
+                    (membership) =>
+                      membership.role?.name ===
+                      "Company Admin"
+                  );
+
+                const canEnter =
+                  accessibleCompanyIds.has(
+                    company.id
+                  );
 
                 return (
                   <tr
@@ -89,13 +119,40 @@ export default async function CompaniesPage() {
                     className="hover:bg-slate-800/40"
                   >
                     <td className="px-6 py-5">
-                      <div className="font-medium text-white">
-                        {company.name}
-                      </div>
+                      {canEnter ? (
+                        <form action={switchCompany}>
+                          <input
+                            type="hidden"
+                            name="companyId"
+                            value={company.id}
+                          />
 
-                      <div className="mt-1 text-xs text-slate-500">
-                        Company ID {company.id}
-                      </div>
+                          <button
+                            type="submit"
+                            className="text-left"
+                          >
+                            <div className="font-medium text-white hover:text-amber-400">
+                              {company.name}
+                            </div>
+
+                            <div className="mt-1 text-xs text-slate-500">
+                              Company ID{" "}
+                              {company.id}
+                            </div>
+                          </button>
+                        </form>
+                      ) : (
+                        <>
+                          <div className="font-medium text-white">
+                            {company.name}
+                          </div>
+
+                          <div className="mt-1 text-xs text-slate-500">
+                            Company ID{" "}
+                            {company.id}
+                          </div>
+                        </>
+                      )}
                     </td>
 
                     <td className="px-6 py-5">
@@ -105,23 +162,36 @@ export default async function CompaniesPage() {
                     </td>
 
                     <td className="px-6 py-5 text-slate-300">
-                      {company.memberships.length}
+                      {
+                        company.memberships
+                          .length
+                      }
                     </td>
 
                     <td className="px-6 py-5">
                       {admins.length > 0 ? (
                         <div className="space-y-1">
-                          {admins.map((admin) => (
-                            <div key={admin.id}>
-                              <div className="text-slate-200">
-                                {admin.user.name}
-                              </div>
+                          {admins.map(
+                            (admin) => (
+                              <div
+                                key={admin.id}
+                              >
+                                <div className="text-slate-200">
+                                  {
+                                    admin.user
+                                      .name
+                                  }
+                                </div>
 
-                              <div className="text-xs text-slate-500">
-                                {admin.user.email}
+                                <div className="text-xs text-slate-500">
+                                  {
+                                    admin.user
+                                      .email
+                                  }
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            )
+                          )}
                         </div>
                       ) : (
                         <span className="text-slate-500">
@@ -133,6 +203,31 @@ export default async function CompaniesPage() {
                     <td className="px-6 py-5 font-mono text-xs text-slate-500">
                       {company.slug}
                     </td>
+
+                    <td className="px-6 py-5 text-right">
+                      {canEnter ? (
+                        <form
+                          action={switchCompany}
+                        >
+                          <input
+                            type="hidden"
+                            name="companyId"
+                            value={company.id}
+                          />
+
+                          <button
+                            type="submit"
+                            className="inline-flex rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-semibold text-white hover:border-amber-500 hover:text-amber-400"
+                          >
+                            Enter Company
+                          </button>
+                        </form>
+                      ) : (
+                        <span className="text-xs text-slate-600">
+                          No membership
+                        </span>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -140,7 +235,7 @@ export default async function CompaniesPage() {
               {companies.length === 0 && (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={6}
                     className="px-6 py-12 text-center text-slate-500"
                   >
                     No companies have been created yet.
