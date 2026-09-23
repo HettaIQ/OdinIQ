@@ -48,8 +48,9 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  memberships CompanyMembership[]
-  sessions    Session[]
+    memberships     CompanyMembership[]
+  sessions        Session[]
+  activationTokens AccountActivationToken[]
 }
 
 model Session {
@@ -69,6 +70,22 @@ model Session {
   @@index([userId])
   @@index([expiresAt])
   @@index([activeCompanyId])
+}
+
+model AccountActivationToken {
+  id Int @id @default(autoincrement())
+
+  tokenHash String @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model CompanyMembership {

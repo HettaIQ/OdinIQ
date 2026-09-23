@@ -9,10 +9,17 @@ function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
-export async function getCurrentUser() {
+type GetCurrentUserOptions = {
+  allMemberships?: boolean;
+};
+
+export async function getCurrentUser(
+  options: GetCurrentUserOptions = {}
+) {
   const cookieStore = await cookies();
 
-  const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+  const token =
+    cookieStore.get(SESSION_COOKIE_NAME)?.value;
 
   if (!token) {
     return null;
@@ -43,6 +50,9 @@ export async function getCurrentUser() {
                 },
               },
             },
+            orderBy: {
+              id: "asc",
+            },
           },
         },
       },
@@ -57,29 +67,48 @@ export async function getCurrentUser() {
     return null;
   }
 
-  const memberships = session.user.memberships;
+  const memberships =
+    session.user.memberships;
+
+  /*
+   * Some pages, such as the company selector,
+   * need to see every company the user can
+   * access.
+   */
+  if (options.allMemberships) {
+    return {
+      ...session.user,
+      memberships,
+    };
+  }
 
   if (memberships.length === 0) {
     return session.user;
   }
 
-  let activeMembership = session.activeCompanyId
-    ? memberships.find(
-        (membership) =>
-          membership.companyId ===
-          session.activeCompanyId
-      )
-    : undefined;
+  /*
+   * Find the membership belonging to the
+   * company currently selected for this
+   * browser session.
+   */
+  let activeMembership =
+    session.activeCompanyId
+      ? memberships.find(
+          (membership) =>
+            membership.companyId ===
+            session.activeCompanyId
+        )
+      : undefined;
 
   /*
-   * Existing sessions do not yet have an
-   * activeCompanyId.
-   *
-   * If the user currently has only one active
-   * company membership, safely make that company
-   * the active company for this session.
+   * Existing/single-company users can safely
+   * have their only company selected
+   * automatically.
    */
-  if (!activeMembership && memberships.length === 1) {
+  if (
+    !activeMembership &&
+    memberships.length === 1
+  ) {
     activeMembership = memberships[0];
 
     await prisma.session.update({
@@ -94,12 +123,12 @@ export async function getCurrentUser() {
   }
 
   /*
-   * If an activeCompanyId exists but the user no
-   * longer has access to that company, do not
-   * silently switch them into another tenant.
+   * If no company has been selected and the
+   * user has multiple companies, do not guess.
    *
-   * This becomes especially important once Odin
-   * contains multiple customer companies.
+   * Tenant pages will therefore see no active
+   * membership until the user deliberately
+   * selects a company.
    */
   if (!activeMembership) {
     return {
@@ -109,19 +138,18 @@ export async function getCurrentUser() {
   }
 
   /*
-   * Keep the active membership first.
-   *
-   * Existing Odin code that currently uses
-   * user.memberships[0] will therefore use the
-   * explicitly selected company while we migrate
-   * the application to the central company
+   * Keep the active company first so existing
+   * Odin code using memberships[0] continues
+   * to operate against the selected tenant
+   * during the transition to central company
    * context.
    */
   const orderedMemberships = [
     activeMembership,
     ...memberships.filter(
       (membership) =>
-        membership.id !== activeMembership.id
+        membership.id !==
+        activeMembership.id
     ),
   ];
 

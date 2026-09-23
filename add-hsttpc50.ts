@@ -3,10 +3,12 @@ import { prisma } from "./lib/prisma";
 async function main() {
   const product = await prisma.product.upsert({
     where: {
-      productCode: "HSTTPC50",
+      companyId_productCode: {
+        companyId: 1,
+        productCode: "HSTTPC50",
+      },
     },
     update: {
-      companyId: 1,
       costPrice: 6.38,
       active: true,
     },

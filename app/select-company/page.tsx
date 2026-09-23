@@ -4,7 +4,9 @@ import { requireAuth } from "@/lib/auth/requireAuth";
 import { switchCompany } from "@/app/actions/switchCompany";
 
 export default async function SelectCompanyPage() {
-  const user = await requireAuth();
+  const user = await requireAuth({
+  allMemberships: true,
+});
 
   const memberships = user.memberships.filter(
     (membership) => membership.active

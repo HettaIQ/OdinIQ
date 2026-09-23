@@ -23,24 +23,28 @@ const productsToUpdate = [
   },
   {
     productCode: "HSWSP01",
-    description: "Wet Screed Underfloor Heating Panel - Legacy 20mm",
+    description:
+      "Wet Screed Underfloor Heating Panel - Legacy 20mm",
     costPrice: 3.88,
   },
 ];
 
 async function main() {
-  const company = await prisma.company.findFirst({
-    orderBy: {
-      id: "asc",
-    },
-    select: {
-      id: true,
-      name: true,
-    },
-  });
+  const company =
+    await prisma.company.findFirst({
+      orderBy: {
+        id: "asc",
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+    });
 
   if (!company) {
-    throw new Error("No company found.");
+    throw new Error(
+      "No company found."
+    );
   }
 
   console.log(
@@ -51,7 +55,11 @@ async function main() {
     const existing =
       await prisma.product.findUnique({
         where: {
-          productCode: item.productCode,
+          companyId_productCode: {
+            companyId: company.id,
+            productCode:
+              item.productCode,
+          },
         },
         select: {
           id: true,
@@ -68,7 +76,8 @@ async function main() {
           id: existing.id,
         },
         data: {
-          costPrice: item.costPrice,
+          costPrice:
+            item.costPrice,
 
           /*
            * Keep existing description if one
@@ -77,14 +86,6 @@ async function main() {
           description:
             existing.description ||
             item.description,
-
-          /*
-           * Assign the company if this is a
-           * legacy/global product.
-           */
-          companyId:
-            existing.companyId ??
-            company.id,
         },
       });
 
@@ -99,10 +100,14 @@ async function main() {
 
     await prisma.product.create({
       data: {
-        companyId: company.id,
-        productCode: item.productCode,
-        description: item.description,
-        costPrice: item.costPrice,
+        companyId:
+          company.id,
+        productCode:
+          item.productCode,
+        description:
+          item.description,
+        costPrice:
+          item.costPrice,
         active: true,
       },
     });

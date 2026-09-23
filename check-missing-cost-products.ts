@@ -1,5 +1,7 @@
 import { prisma } from "./lib/prisma";
 
+const COMPANY_ID = 1;
+
 const stockCodes = [
   "AAV",
   "HSACTPIN",
@@ -38,7 +40,10 @@ async function main() {
     const exactProduct =
       await prisma.product.findUnique({
         where: {
-          productCode: code,
+          companyId_productCode: {
+            companyId: COMPANY_ID,
+            productCode: code,
+          },
         },
         select: {
           id: true,
@@ -82,6 +87,9 @@ async function main() {
     const gdnLines =
       await prisma.goodsDespatchLine.findMany({
         where: {
+          goodsDespatchNote: {
+            companyId: COMPANY_ID,
+          },
           OR: [
             {
               stockCode: code,
@@ -118,7 +126,8 @@ async function main() {
       `\nRecent GDN lines: ${gdnLines.length}`
     );
 
-    const descriptions = new Set<string>();
+    const descriptions =
+      new Set<string>();
 
     for (const line of gdnLines) {
       const description =
@@ -155,7 +164,8 @@ async function main() {
      * Useful for Sage/Xero aliases such as
      * KIT30HP versus HSKIT30.
      */
-    const codeSearchTerms = new Set<string>();
+    const codeSearchTerms =
+      new Set<string>();
 
     codeSearchTerms.add(code);
 
@@ -183,6 +193,7 @@ async function main() {
     const possibleCodeMatches =
       await prisma.product.findMany({
         where: {
+          companyId: COMPANY_ID,
           OR: Array.from(
             codeSearchTerms
           ).flatMap((term) => [
@@ -243,13 +254,12 @@ async function main() {
      * different.
      */
     const possibleDescriptionMatches: Array<{
-  productCode: string;
-  description: string;
-  costPrice: number | null;
-  listPrice: number | null;
-  active: boolean;
-}> = [];
-      [];
+      productCode: string;
+      description: string;
+      costPrice: number | null;
+      listPrice: number | null;
+      active: boolean;
+    }> = [];
 
     for (const description of descriptions) {
       const words = description
@@ -270,6 +280,7 @@ async function main() {
       const matches =
         await prisma.product.findMany({
           where: {
+            companyId: COMPANY_ID,
             AND: words.map((word) => ({
               description: {
                 contains: word,

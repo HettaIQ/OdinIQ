@@ -36,11 +36,14 @@ async function main() {
 
   for (const alias of aliases) {
     const product =
-      await prisma.product.findUnique({
-        where: {
-          productCode:
-            alias.targetProductCode,
-        },
+  await prisma.product.findUnique({
+    where: {
+      companyId_productCode: {
+        companyId: company.id,
+        productCode:
+          alias.targetProductCode,
+      },
+    },
         select: {
           id: true,
           productCode: true,
