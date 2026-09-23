@@ -170,7 +170,6 @@ export const roleDefinitions = [
       "products.view_list_price",
       "products.view_cost_price",
       "products.view_margin",
-      "commercial.profitability.view",
       "customers.view_all",
       "quotes.view_all",
       "quotes.create",
