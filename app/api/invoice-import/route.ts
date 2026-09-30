@@ -316,15 +316,15 @@ const canImport =
       ] of groupedRows
     ) {
       const existingInvoice =
-        await prisma.salesInvoice.findUnique({
-          where: {
-            companyId_invoiceNumber: {
-              companyId:
-                companyId,
-              invoiceNumber,
-            },
-          },
-        });
+  await prisma.salesInvoice.findUnique({
+    where: {
+      companyId_businessUnitId_invoiceNumber: {
+        companyId,
+        businessUnitId: 1,
+        invoiceNumber,
+      },
+    },
+  });
 
       const invoiceType =
         firstText(
@@ -634,22 +634,21 @@ const canImport =
         creditedInvoiceNumber
       ) {
         const originalInvoice =
-          await prisma.salesInvoice.findUnique(
-            {
-              where: {
-                companyId_invoiceNumber:
-                  {
-                    companyId:
-                      companyId,
-                    invoiceNumber:
-                      creditedInvoiceNumber,
-                  },
-              },
-              select: {
-                id: true,
-              },
-            }
-          );
+  await prisma.salesInvoice.findUnique(
+    {
+      where: {
+        companyId_businessUnitId_invoiceNumber: {
+          companyId,
+          businessUnitId: 1,
+          invoiceNumber:
+            creditedInvoiceNumber,
+        },
+      },
+      select: {
+        id: true,
+      },
+    }
+  );
 
         creditedInvoiceId =
           originalInvoice?.id ??
@@ -661,16 +660,15 @@ const canImport =
       }
 
       const savedInvoice =
-        await prisma.salesInvoice.upsert(
-          {
-            where: {
-              companyId_invoiceNumber:
-                {
-                  companyId:
-                    companyId,
-                  invoiceNumber,
-                },
-            },
+  await prisma.salesInvoice.upsert(
+    {
+      where: {
+        companyId_businessUnitId_invoiceNumber: {
+          companyId,
+          businessUnitId: 1,
+          invoiceNumber,
+        },
+      },
 
             update: {
               /*
@@ -695,9 +693,10 @@ const canImport =
             },
 
             create: {
-              companyId:
-                companyId,
-              invoiceNumber,
+  companyId:
+    companyId,
+  businessUnitId: 1,
+  invoiceNumber,
               salesOrderNumber,
               customerOrderNumber,
               invoiceType:
@@ -718,11 +717,11 @@ const canImport =
       await prisma.salesInvoice.updateMany(
         {
           where: {
-            companyId:
-              companyId,
+  companyId,
+  businessUnitId: 1,
 
-            creditedInvoiceNumber:
-              invoiceNumber,
+  creditedInvoiceNumber:
+    invoiceNumber,
 
             creditedInvoiceId: null,
 

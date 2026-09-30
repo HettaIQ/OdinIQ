@@ -40,6 +40,33 @@ model Company {
   productStockLocations   ProductStockLocation[]
   stocktakeSessions       StocktakeSession[]
   stocktakeLines          StocktakeLine[]
+  businessUnits           BusinessUnit[]
+}
+
+model BusinessUnit {
+  id Int @id @default(autoincrement())
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  name String
+  slug String
+
+  // MAIN = the company's normal/core operation.
+  // DIVISION = a trading division, sister operation or brand.
+  type String @default("DIVISION")
+
+  active Boolean @default(true)
+
+  description String?
+
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  salesInvoices SalesInvoice[]
+
+  @@unique([companyId, slug])
+  @@index([companyId])
+  @@index([companyId, active])
 }
 
 model User {
@@ -880,8 +907,10 @@ model GoodsDespatchLine {
 model SalesInvoice {
   id Int @id @default(autoincrement())
 
-  companyId Int
-  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId      Int
+  company        Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  businessUnitId Int?
+  businessUnit   BusinessUnit? @relation(fields: [businessUnitId], references: [id], onDelete: SetNull)
 
   invoiceNumber       String
   salesOrderNumber    String?
@@ -908,9 +937,10 @@ model SalesInvoice {
 
   lines SalesInvoiceLine[]
 
-  @@unique([companyId, invoiceNumber])
+  @@unique([companyId, businessUnitId, invoiceNumber])
   @@index([companyId, customerAccountCode])
   @@index([companyId, invoiceDate])
+  @@index([businessUnitId])
   @@index([creditedInvoiceId])
   @@index([companyId, creditedInvoiceNumber])
 }
