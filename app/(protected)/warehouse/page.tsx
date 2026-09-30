@@ -175,6 +175,14 @@ export default async function WarehousePage() {
           despatch. Open an order to update its progress, add notes and
           record photo evidence.
         </p>
+        <div className="mt-5">
+          <Link
+            href="/warehouse/stock-locations"
+            className="inline-flex items-center rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-slate-800"
+          >
+            Stock Locations
+          </Link>
+        </div>
       </div>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">

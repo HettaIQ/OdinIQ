@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 
 import { getApiCompanyContext } from "@/lib/auth/getApiCompanyContext";
+import { isPublicDemoContext } from "@/lib/auth/isPublicDemoContext";
 import { prisma } from "@/lib/prisma";
 
 type GdnImportRow = {
@@ -129,6 +130,15 @@ const {
   membership,
   companyId,
 } = context;
+
+if (isPublicDemoContext(context)) {
+  return NextResponse.json(
+    {
+      error: "The public OdinIQ demo is read-only.",
+    },
+    { status: 403 }
+  );
+}
 
 const canImport =
   user.platformRole === "SUPER_ADMIN" ||

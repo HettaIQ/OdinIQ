@@ -5,6 +5,7 @@ import path from "path";
 import OpenAI from "openai";
 import { prisma } from "@/lib/prisma";
 import { getApiCompanyContext } from "@/lib/auth/getApiCompanyContext";
+import { isPublicDemoContext } from "@/lib/auth/isPublicDemoContext";
 
 export const runtime = "nodejs";
 const openai = new OpenAI({
@@ -28,6 +29,15 @@ export async function POST(request: NextRequest) {
         { status: 403 }
       );
     }
+
+if (isPublicDemoContext(context)) {
+  return NextResponse.json(
+    {
+      error: "The public OdinIQ demo is read-only.",
+    },
+    { status: 403 }
+  );
+}
 
     const {
   user,

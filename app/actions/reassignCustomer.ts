@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
+import { requireCompanyWriteContext } from "@/lib/auth/requireCompanyWriteContext";
 import { prisma } from "@/lib/prisma";
 
 export async function reassignCustomer(formData: FormData) {
@@ -10,7 +10,7 @@ export async function reassignCustomer(formData: FormData) {
     user,
     membership,
     companyId,
-  } = await requireCompanyContext();
+  } = await requireCompanyWriteContext();
 
   const canReassignCustomers =
     user.platformRole === "SUPER_ADMIN" ||

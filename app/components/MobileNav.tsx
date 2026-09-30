@@ -6,35 +6,53 @@ import { useState } from "react";
 
 type MobileNavProps = {
   canManageTeam: boolean;
+  isDemoViewer: boolean;
 };
 
 export default function MobileNav({
   canManageTeam,
+  isDemoViewer,
 }: MobileNavProps) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
-  const navigationItems = [
-    { href: "/dashboard", label: "Dashboard" },
-    { href: "/commercial", label: "Commercial" },
-    { href: "/tasks", label: "Tasks" },
-    { href: "/opportunities", label: "Opportunities" },
-    { href: "/products", label: "Products" },
-    { href: "/warehouse", label: "Warehouse" },
-    { href: "/commercial/customers", label: "Customers" },
-    { href: "/quotes", label: "Quotes" },
-    { href: "/agreements", label: "Agreements" },
-    { href: "/pricing", label: "Pricing" },
-    { href: "/crm", label: "CRM" },
-    { href: "/reports", label: "Reports" },
-    { href: "/ask-odin", label: "Ask Odin" },
+ const standardNavigationItems = [
+  { href: "/dashboard", label: "Dashboard" },
+  { href: "/commercial", label: "Commercial" },
+  { href: "/tasks", label: "Tasks" },
+  { href: "/opportunities", label: "Opportunities" },
+  { href: "/products", label: "Products" },
+  { href: "/warehouse", label: "Warehouse" },
+  { href: "/commercial/customers", label: "Customers" },
+  { href: "/quotes", label: "Quotes" },
+  { href: "/agreements", label: "Agreements" },
+  { href: "/pricing", label: "Pricing" },
+  { href: "/crm", label: "CRM" },
+  { href: "/reports", label: "Reports" },
+  { href: "/ask-odin", label: "Ask Odin" },
 
-    ...(canManageTeam
-      ? [{ href: "/team", label: "Team" }]
-      : []),
+  ...(canManageTeam
+    ? [{ href: "/team", label: "Team" }]
+    : []),
 
-    { href: "/settings", label: "Settings" },
-  ];
+  { href: "/settings", label: "Settings" },
+];
+
+const demoNavigationItems = [
+  { href: "/dashboard", label: "Dashboard" },
+  { href: "/commercial", label: "Commercial" },
+  { href: "/products", label: "Products" },
+  { href: "/warehouse", label: "Warehouse" },
+  { href: "/commercial/customers", label: "Customers" },
+  { href: "/quotes", label: "Quotes" },
+  { href: "/reports", label: "Reports" },
+  { href: "/ask-odin", label: "Ask Odin" },
+];
+
+const navigationItems =
+  isDemoViewer
+    ? demoNavigationItems
+    : standardNavigationItems;
 
   function isActive(href: string) {
     if (href === "/dashboard") {

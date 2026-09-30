@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 
 import { getApiCompanyContext } from "@/lib/auth/getApiCompanyContext";
+import { isPublicDemoContext } from "@/lib/auth/isPublicDemoContext";
 import { prisma } from "@/lib/prisma";
 
 type InvoiceImportRow = {
@@ -14,6 +15,7 @@ type InvoiceImportRow = {
 
   amount?: string | number;
   netAmount?: string | number;
+  netValueDiscount?: string | number;
   taxAmount?: string | number;
   grossAmount?: string | number;
 
@@ -230,6 +232,15 @@ const {
   membership,
   companyId,
 } = context;
+
+if (isPublicDemoContext(context)) {
+  return NextResponse.json(
+    {
+      error: "The public OdinIQ demo is read-only.",
+    },
+    { status: 403 }
+  );
+}
 
 const canImport =
   user.platformRole === "SUPER_ADMIN" ||
@@ -510,7 +521,23 @@ const canImport =
       const importedNetValue =
         sumField(
           invoiceRows,
-          (row) => row.netAmount
+          (row) => {
+            const net =
+              toNumber(row.netAmount);
+
+            if (net === null) {
+              return null;
+            }
+
+            const discount =
+              toNumber(
+                row.netValueDiscount
+              ) ?? 0;
+
+            return Number(
+              (net - discount).toFixed(2)
+            );
+          }
         );
 
       const taxFromSage =
@@ -785,9 +812,25 @@ if (hasDetailedLines) {
 
         quantity:
           toNumber(row.quantity),
+        originalNetValue:
+          toNumber(row.netAmount),
+
+        netValueDiscount:
+          toNumber(
+            row.netValueDiscount
+          ) ?? 0,
 
         netValue:
-          toNumber(row.netAmount),
+          toNumber(row.netAmount) === null
+            ? null
+            : Number(
+                (
+                  toNumber(row.netAmount)! -
+                  (toNumber(
+                    row.netValueDiscount
+                  ) ?? 0)
+                ).toFixed(2)
+              ),
 
         vatValue:
           toNumber(row.taxAmount),
@@ -831,3 +874,6 @@ return NextResponse.json(
 );
 }
 }
+
+
+

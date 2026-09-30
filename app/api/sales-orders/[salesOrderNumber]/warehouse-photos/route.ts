@@ -55,10 +55,28 @@ export async function POST(
     }
 
     const {
-      user,
-      membership,
-      companyId,
-    } = companyContext;
+  user,
+  membership,
+  company,
+  companyId,
+} = companyContext;
+
+const isPublicDemo =
+  company.slug === "odin-demo" &&
+  membership.role?.name === "Demo Viewer" &&
+  user.email.toLowerCase() === "demo@odiniq.co.uk";
+
+if (isPublicDemo) {
+  return NextResponse.json(
+    {
+      success: false,
+      message: "The public OdinIQ demo is read-only.",
+    },
+    {
+      status: 403,
+    }
+  );
+}
 
     /*
      * Warehouse evidence can only be uploaded

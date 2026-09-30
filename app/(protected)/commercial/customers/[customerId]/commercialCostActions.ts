@@ -3,7 +3,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
+import { requireCompanyWriteContext } from "@/lib/auth/requireCompanyWriteContext";
 import { prisma } from "@/lib/prisma";
 
 const ALLOWED_COST_TYPES = new Set([
@@ -20,7 +20,7 @@ async function requireProfitabilityAccess() {
   const {
     membership,
     companyId,
-  } = await requireCompanyContext();
+   } = await requireCompanyWriteContext();
 
   if (!membership.role?.id) {
     throw new Error("No role found for this user.");

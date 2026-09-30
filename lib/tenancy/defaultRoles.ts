@@ -265,4 +265,18 @@ export const roleDefinitions = [
       "stock.alerts",
     ],
   },
+    {
+    name: "Demo Viewer",
+    description:
+      "Read-only access for exploring an OdinIQ demonstration environment.",
+    permissionKeys: [
+      "products.view",
+      "products.view_list_price",
+      "customers.view_all",
+      "quotes.view_all",
+      "sales.view_all",
+      "stock.view",
+      "stock.alerts",
+    ],
+  },
 ] as const;

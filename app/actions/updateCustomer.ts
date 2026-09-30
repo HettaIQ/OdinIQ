@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
+import { requireCompanyWriteContext } from "@/lib/auth/requireCompanyWriteContext";
 import { prisma } from "@/lib/prisma";
 
 export async function updateCustomer(
@@ -13,7 +13,7 @@ export async function updateCustomer(
     user,
     membership,
     companyId,
-  } = await requireCompanyContext();
+    } = await requireCompanyWriteContext();
 
   const canManageCustomers =
     user.platformRole === "SUPER_ADMIN" ||

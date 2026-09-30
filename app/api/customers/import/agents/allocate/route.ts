@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
 import { getApiCompanyContext } from "@/lib/auth/getApiCompanyContext";
+import { isPublicDemoContext } from "@/lib/auth/isPublicDemoContext";
 import {
   getCustomerImportSession,
   saveCustomerImportAllocations,
@@ -47,6 +48,15 @@ export async function POST(request: Request) {
   membership,
   companyId,
 } = companyContext;
+
+if (isPublicDemoContext(companyContext)) {
+  return NextResponse.json(
+    {
+      error: "The public OdinIQ demo is read-only.",
+    },
+    { status: 403 }
+  );
+}
 
 const canManage =
   user.platformRole === "SUPER_ADMIN" ||

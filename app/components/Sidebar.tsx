@@ -7,11 +7,14 @@ export default async function Sidebar() {
     membership,
   } = await requireCompanyContext();
 
+   const isDemoViewer =
+    membership.role?.name === "Demo Viewer";
+
   const canManageTeam =
     membership.role?.name === "Company Admin" ||
     membership.role?.name === "Accounts";
 
-  const navigationItems = [
+  const standardNavigationItems = [
     {
       href: "/dashboard",
       label: "Dashboard",
@@ -19,6 +22,10 @@ export default async function Sidebar() {
     {
       href: "/commercial",
       label: "Commercial",
+    },
+    {
+      href: "/commercial/purchases",
+      label: "Purchase Intelligence",
     },
     {
       href: "/tasks",
@@ -79,6 +86,40 @@ export default async function Sidebar() {
       label: "Settings",
     },
   ];
+
+  const demoNavigationItems = [
+    {
+      href: "/dashboard",
+      label: "Dashboard",
+    },
+    {
+      href: "/commercial",
+      label: "Commercial",
+    },
+    {
+      href: "/products",
+      label: "Products",
+    },
+    {
+      href: "/warehouse",
+      label: "Warehouse",
+    },
+    {
+      href: "/commercial/customers",
+      label: "Customers",
+    },
+    
+  
+    {
+      href: "/ask-odin",
+      label: "Ask Odin",
+    },
+  ];
+
+  const navigationItems =
+    isDemoViewer
+      ? demoNavigationItems
+      : standardNavigationItems;
 
   return (
     <aside className="hidden w-64 flex-col border-r border-slate-800 bg-slate-950 text-white lg:flex">

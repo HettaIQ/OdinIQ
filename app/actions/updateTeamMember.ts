@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
+import { requireCompanyWriteContext } from "@/lib/auth/requireCompanyWriteContext";
 import { prisma } from "@/lib/prisma";
 
 export async function updateTeamMember(
@@ -13,7 +13,7 @@ export async function updateTeamMember(
     user: currentUser,
     membership,
     companyId,
-  } = await requireCompanyContext();
+ } = await requireCompanyWriteContext();
 
   const canManageUsers =
     currentUser.platformRole === "SUPER_ADMIN" ||

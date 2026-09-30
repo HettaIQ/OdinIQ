@@ -68,6 +68,13 @@ export default async function DashboardPage() {
     companyId,
   } = await requireCompanyContext();
 
+    const canCompleteTasks =
+    user.platformRole === "SUPER_ADMIN" ||
+    membership.role?.permissions.some(
+      ({ permission }) =>
+        permission.key === "tasks.complete"
+    ) === true;
+
   const intelligenceSignals =
   await getCommercialIntelligence(companyId);
 
@@ -509,21 +516,23 @@ export default async function DashboardPage() {
                     Open customer →
                   </Link>
 
-                  <form
-                    action={async () => {
-                      "use server";
-                      await completeTask(
-                        task.id
-                      );
-                    }}
-                  >
-                    <button
-                      type="submit"
-                      className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                                    {canCompleteTasks ? (
+                    <form
+                      action={async () => {
+                        "use server";
+                        await completeTask(
+                          task.id
+                        );
+                      }}
                     >
-                      Complete
-                    </button>
-                  </form>
+                      <button
+                        type="submit"
+                        className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                      >
+                        Complete
+                      </button>
+                    </form>
+                  ) : null}
                 </div>
               </div>
             ))}

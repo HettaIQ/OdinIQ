@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getApiCompanyContext } from "@/lib/auth/getApiCompanyContext";
+import { isPublicDemoContext } from "@/lib/auth/isPublicDemoContext";
 import { prisma } from "@/lib/prisma";
 
 function optionalText(value: unknown): string | null {
@@ -58,6 +59,16 @@ if (
       success: false,
       message:
         "No active company membership was found.",
+    },
+    { status: 403 }
+  );
+}
+
+if (isPublicDemoContext(context)) {
+  return NextResponse.json(
+    {
+      success: false,
+      message: "The public OdinIQ demo is read-only.",
     },
     { status: 403 }
   );

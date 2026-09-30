@@ -15,6 +15,9 @@ export default function TopBar({
   companyName,
   canManageTeam,
 }: TopBarProps) {
+  const isDemoViewer =
+  roleName === "Demo Viewer";
+
   const isHetta =
     companyName.trim().toLowerCase() ===
     "hetta systems";
@@ -79,8 +82,9 @@ export default function TopBar({
 
         <div className="flex shrink-0 items-center gap-2">
           <MobileNav
-            canManageTeam={canManageTeam}
-          />
+  canManageTeam={canManageTeam}
+  isDemoViewer={isDemoViewer}
+/>
 
           <form action={logout}>
             <button

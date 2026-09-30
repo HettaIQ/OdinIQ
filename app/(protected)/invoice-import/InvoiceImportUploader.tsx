@@ -19,6 +19,7 @@ type PreviewRow = {
   description?: string;
   quantity?: string | number;
   netAmount?: string | number;
+  netValueDiscount?: string | number;
   taxAmount?: string | number;
   grossAmount?: string | number;
 };
@@ -287,6 +288,12 @@ export default function InvoiceImportUploader() {
           "Net Amount",
           "Total Net",
         ]);
+      const netValueDiscountIndex =
+        findHeaderIndex([
+          "InvoiceItem.AmountNetValueDiscountProportion",
+          "Net Value Discount",
+          "Net Value Discount Proportion",
+        ]);
 
       const taxAmountIndex =
         findHeaderIndex([
@@ -423,6 +430,14 @@ export default function InvoiceImportUploader() {
               ? String(
                   row[
                     netAmountIndex
+                  ] ?? ""
+                ).trim()
+              : "",
+          netValueDiscount:
+            netValueDiscountIndex >= 0
+              ? String(
+                  row[
+                    netValueDiscountIndex
                   ] ?? ""
                 ).trim()
               : "",
@@ -881,3 +896,4 @@ export default function InvoiceImportUploader() {
     </div>
   );
 }
+

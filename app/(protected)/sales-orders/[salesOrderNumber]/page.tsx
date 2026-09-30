@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
 import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
+import { requireCompanyWriteContext } from "@/lib/auth/requireCompanyWriteContext";
 import { prisma } from "@/lib/prisma";
 import WarehousePhotoUpload from "./WarehousePhotoUpload";
 import SalesOrderQrCode from "./SalesOrderQrCode";
@@ -20,7 +21,7 @@ async function updateInvestigation(formData: FormData) {
     user,
     membership,
     companyId,
-  } = await requireCompanyContext();
+    } = await requireCompanyWriteContext();
 
   const canManageAudit =
     user.platformRole === "SUPER_ADMIN" ||
@@ -80,7 +81,7 @@ async function updateWarehouse(formData: FormData) {
     user,
     membership,
     companyId,
-  } = await requireCompanyContext();
+    } = await requireCompanyWriteContext();
 
   const canDispatchStock =
     user.platformRole === "SUPER_ADMIN" ||

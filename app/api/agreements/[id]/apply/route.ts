@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getApiCompanyContext } from "@/lib/auth/getApiCompanyContext";
+import { isPublicDemoContext } from "@/lib/auth/isPublicDemoContext";
 import { applyCommercialTerms } from "@/lib/odin/applyCommercialTerms";
 
 type RouteContext = {
@@ -23,52 +24,53 @@ export async function POST(
   context: RouteContext
 ) {
   try {
-    const companyContext =
-  await getApiCompanyContext();
+    const companyContext = await getApiCompanyContext();
 
-if (
-  companyContext.status ===
-  "UNAUTHENTICATED"
-) {
-  return NextResponse.json(
-    {
-      error:
-        "You must be signed in.",
-    },
-    {
-      status: 401,
+    if (companyContext.status === "UNAUTHENTICATED") {
+      return NextResponse.json(
+        {
+          error: "You must be signed in.",
+        },
+        {
+          status: 401,
+        }
+      );
     }
-  );
-}
 
-if (
-  companyContext.status ===
-  "NO_COMPANY"
-) {
-  return NextResponse.json(
-    {
-      error:
-        "No active company membership was found.",
-    },
-    {
-      status: 403,
+    if (companyContext.status === "NO_COMPANY") {
+      return NextResponse.json(
+        {
+          error: "No active company membership was found.",
+        },
+        {
+          status: 403,
+        }
+      );
     }
-  );
-}
 
-const {
-  user,
-  membership,
-  companyId,
-} = companyContext;
+    const {
+      user,
+      membership,
+      companyId,
+    } = companyContext;
+    if (isPublicDemoContext(companyContext)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "The public OdinIQ demo is read-only.",
+        },
+        { status: 403 }
+      );
+    }
 
     const canApplyTerms =
-      user.platformRole ===
-        "SUPER_ADMIN" ||
-      membership.role?.name ===
-        "Company Admin" ||
-      membership.role?.name ===
-        "Accounts";
+      user.platformRole === "SUPER_ADMIN" ||
+      Boolean(
+        membership.role?.permissions.some(
+          ({ permission }) =>
+            permission.key === "agreements.manage",
+        ),
+      );
 
     if (!canApplyTerms) {
       return NextResponse.json(
@@ -112,8 +114,7 @@ const {
       await applyCommercialTerms({
         agreementId,
 
-        companyId:
-          companyId,
+        companyId,
 
         discount:
           body.discount,

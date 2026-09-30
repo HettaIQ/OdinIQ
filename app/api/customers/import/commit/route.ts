@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getApiCompanyContext } from "@/lib/auth/getApiCompanyContext";
 import { getCustomerImportSession } from "@/lib/customerImportSession";
+import { isPublicDemoContext } from "@/lib/auth/isPublicDemoContext";
 
 type SageCustomerRow = Record<string, unknown>;
 
@@ -103,6 +104,15 @@ export async function POST() {
   membership,
   companyId,
 } = companyContext;
+
+if (isPublicDemoContext(companyContext)) {
+  return NextResponse.json(
+    {
+      error: "The public OdinIQ demo is read-only.",
+    },
+    { status: 403 }
+  );
+}
 
 const canManage =
   user.platformRole === "SUPER_ADMIN" ||

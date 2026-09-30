@@ -1,0 +1,888 @@
+﻿import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
+import { prisma } from "@/lib/prisma";
+import {
+  calculatePipeMetres,
+  getPipeProduct,
+  PIPE_PRODUCTS,
+} from "@/lib/purchase-intelligence/pipe";
+
+const MONTHS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+function money(value: number) {
+  return new Intl.NumberFormat("en-GB", {
+    style: "currency",
+    currency: "GBP",
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function number(value: number) {
+  return new Intl.NumberFormat("en-GB", {
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function percentage(value: number | null) {
+  if (value === null) return "Ã¢â‚¬â€";
+
+  const sign = value > 0 ? "+" : "";
+
+  return `${sign}${value.toFixed(1)}%`;
+}
+
+function ordinal(day: number) {
+  if (day >= 11 && day <= 13) return `${day}th`;
+
+  switch (day % 10) {
+    case 1:
+      return `${day}st`;
+    case 2:
+      return `${day}nd`;
+    case 3:
+      return `${day}rd`;
+    default:
+      return `${day}th`;
+  }
+}
+
+type MonthlyValue = {
+  month: string;
+  monthIndex: number;
+  previous: number;
+  current: number;
+  difference: number;
+  change: number | null;
+};
+
+function calculateChange(previous: number, current: number) {
+  const difference = current - previous;
+
+  const change =
+    previous !== 0
+      ? (difference / previous) * 100
+      : current !== 0
+        ? null
+        : 0;
+
+  return {
+    difference,
+    change,
+  };
+}
+
+export default async function PurchaseIntelligencePage() {
+  const { companyId } = await requireCompanyContext();
+
+  const latestOrder = await prisma.purchaseOrder.findFirst({
+    where: {
+      companyId,
+      orderDate: {
+        not: null,
+      },
+    },
+    orderBy: {
+      orderDate: "desc",
+    },
+    select: {
+      orderDate: true,
+    },
+  });
+
+  const latestDate = latestOrder?.orderDate ?? new Date();
+
+  const currentYear = latestDate.getUTCFullYear();
+  const previousYear = currentYear - 1;
+
+  const latestMonth = latestDate.getUTCMonth();
+  const latestDay = latestDate.getUTCDate();
+
+  const lines = await prisma.purchaseOrderLine.findMany({
+    where: {
+      purchaseOrder: {
+        companyId,
+        orderDate: {
+          gte: new Date(
+            Date.UTC(previousYear, 0, 1)
+          ),
+          lte: new Date(
+            Date.UTC(
+              currentYear,
+              latestMonth,
+              latestDay,
+              23,
+              59,
+              59
+            )
+          ),
+        },
+      },
+    },
+    select: {
+      productCode: true,
+      quantity: true,
+      quantityDelivered: true,
+      netValue: true,
+      purchaseOrder: {
+        select: {
+          orderDate: true,
+          supplierAccountCode: true,
+        },
+      },
+    },
+  });
+
+  /*
+   * ALL PURCHASE SPEND
+   */
+  const monthlySpend: MonthlyValue[] = MONTHS.map(
+    (month, monthIndex) => {
+      let previous = 0;
+      let current = 0;
+
+      for (const line of lines) {
+        const date = line.purchaseOrder.orderDate;
+
+        if (!date) continue;
+
+        const year = date.getUTCFullYear();
+        const lineMonth = date.getUTCMonth();
+        const day = date.getUTCDate();
+
+        if (lineMonth !== monthIndex) continue;
+
+        if (
+          monthIndex === latestMonth &&
+          year === previousYear &&
+          day > latestDay
+        ) {
+          continue;
+        }
+
+        const value = line.netValue ?? 0;
+
+        if (year === previousYear) {
+          previous += value;
+        }
+
+        if (year === currentYear) {
+          current += value;
+        }
+      }
+
+      const { difference, change } =
+        calculateChange(previous, current);
+
+      return {
+        month,
+        monthIndex,
+        previous,
+        current,
+        difference,
+        change,
+      };
+    }
+  );
+
+  /*
+   * 16MM PERT-AL-PERT PIPE
+   *
+   * HSPAP100 = 100m
+   * HSPAP150 = 150m
+   * HSPAP200 = 200m
+   * HSPAP500 = 500m
+   */
+  const pipeCodes = new Set(
+    Object.keys(PIPE_PRODUCTS)
+  );
+
+  const monthlyPipe = MONTHS.map(
+    (month, monthIndex) => {
+      let previousCoils = 0;
+      let currentCoils = 0;
+
+      let previousMetres = 0;
+      let currentMetres = 0;
+
+      let previousSpend = 0;
+      let currentSpend = 0;
+
+      for (const line of lines) {
+        const date = line.purchaseOrder.orderDate;
+
+        if (!date) continue;
+
+        const year = date.getUTCFullYear();
+        const lineMonth = date.getUTCMonth();
+        const day = date.getUTCDate();
+
+        if (lineMonth !== monthIndex) continue;
+
+        if (
+          monthIndex === latestMonth &&
+          year === previousYear &&
+          day > latestDay
+        ) {
+          continue;
+        }
+
+        const code =
+          line.productCode?.trim().toUpperCase();
+
+        if (!code || !pipeCodes.has(code)) {
+          continue;
+        }
+
+        const pipe = getPipeProduct(code);
+
+        if (!pipe) continue;
+
+        const quantity =
+          line.quantityDelivered ??
+          line.quantity ??
+          0;
+
+        const metres =
+          calculatePipeMetres(
+            code,
+            quantity
+          ) ?? 0;
+
+        const spend = line.netValue ?? 0;
+
+        if (year === previousYear) {
+          previousCoils += quantity;
+          previousMetres += metres;
+          previousSpend += spend;
+        }
+
+        if (year === currentYear) {
+          currentCoils += quantity;
+          currentMetres += metres;
+          currentSpend += spend;
+        }
+      }
+
+      const metreComparison =
+        calculateChange(
+          previousMetres,
+          currentMetres
+        );
+
+      return {
+        month,
+        monthIndex,
+
+        previousCoils,
+        currentCoils,
+
+        previousMetres,
+        currentMetres,
+
+        previousSpend,
+        currentSpend,
+
+        differenceMetres:
+          metreComparison.difference,
+
+        changeMetres:
+          metreComparison.change,
+      };
+    }
+  );
+
+  const spendYtdRows = monthlySpend.filter(
+    (row) => row.monthIndex <= latestMonth
+  );
+
+  const previousYtd = spendYtdRows.reduce(
+    (total, row) => total + row.previous,
+    0
+  );
+
+  const currentYtd = spendYtdRows.reduce(
+    (total, row) => total + row.current,
+    0
+  );
+
+  const spendComparison =
+    calculateChange(previousYtd, currentYtd);
+
+  const pipeYtdRows = monthlyPipe.filter(
+    (row) => row.monthIndex <= latestMonth
+  );
+
+  const previousPipeCoils =
+    pipeYtdRows.reduce(
+      (total, row) =>
+        total + row.previousCoils,
+      0
+    );
+
+  const currentPipeCoils =
+    pipeYtdRows.reduce(
+      (total, row) =>
+        total + row.currentCoils,
+      0
+    );
+
+  const previousPipeMetres =
+    pipeYtdRows.reduce(
+      (total, row) =>
+        total + row.previousMetres,
+      0
+    );
+
+  const currentPipeMetres =
+    pipeYtdRows.reduce(
+      (total, row) =>
+        total + row.currentMetres,
+      0
+    );
+
+  const previousPipeSpend =
+    pipeYtdRows.reduce(
+      (total, row) =>
+        total + row.previousSpend,
+      0
+    );
+
+  const currentPipeSpend =
+    pipeYtdRows.reduce(
+      (total, row) =>
+        total + row.currentSpend,
+      0
+    );
+
+  const pipeMetreComparison =
+    calculateChange(
+      previousPipeMetres,
+      currentPipeMetres
+    );
+
+  const pipeCoilComparison =
+    calculateChange(
+      previousPipeCoils,
+      currentPipeCoils
+    );
+
+  const pipeSpendComparison =
+    calculateChange(
+      previousPipeSpend,
+      currentPipeSpend
+    );
+
+  const purchaseOrderCount =
+    await prisma.purchaseOrder.count({
+      where: { companyId },
+    });
+
+  const purchaseLineCount =
+    await prisma.purchaseOrderLine.count({
+      where: {
+        purchaseOrder: {
+          companyId,
+        },
+      },
+    });
+
+  return (
+    <main className="space-y-6 p-6">
+      <div>
+        <p className="text-sm font-medium text-slate-500">
+          Commercial Intelligence
+        </p>
+
+        <h1 className="text-3xl font-bold tracking-tight">
+          Purchase Intelligence
+        </h1>
+
+        <p className="mt-2 text-slate-600">
+          Monthly purchase performance comparing{" "}
+          {currentYear} with {previousYear}.
+        </p>
+      </div>
+
+      <div className="rounded-xl border bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold">
+              Comparison period
+            </p>
+
+            <p className="text-sm text-slate-500">
+              January to {MONTHS[latestMonth]}{" "}
+              {latestDay}
+            </p>
+          </div>
+
+          <div className="text-right text-sm text-slate-500">
+            Latest purchase data
+            <div className="font-semibold text-slate-900">
+              {latestDay} {MONTHS[latestMonth]}{" "}
+              {currentYear}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-xl font-semibold">
+            All Purchases
+          </h2>
+
+          <p className="text-sm text-slate-500">
+            Total purchase order spend across all
+            imported products.
+          </p>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-4">
+          <div className="rounded-xl border bg-white p-5 shadow-sm">
+            <p className="text-sm text-slate-500">
+              {currentYear} YTD Spend
+            </p>
+
+            <p className="mt-2 text-3xl font-semibold">
+              {money(currentYtd)}
+            </p>
+          </div>
+
+          <div className="rounded-xl border bg-white p-5 shadow-sm">
+            <p className="text-sm text-slate-500">
+              {previousYear} Same Period
+            </p>
+
+            <p className="mt-2 text-3xl font-semibold">
+              {money(previousYtd)}
+            </p>
+          </div>
+
+          <div className="rounded-xl border bg-white p-5 shadow-sm">
+            <p className="text-sm text-slate-500">
+              Spend Difference
+            </p>
+
+            <p className="mt-2 text-3xl font-semibold">
+              {money(
+                spendComparison.difference
+              )}
+            </p>
+          </div>
+
+          <div className="rounded-xl border bg-white p-5 shadow-sm">
+            <p className="text-sm text-slate-500">
+              YTD Change
+            </p>
+
+            <p className="mt-2 text-3xl font-semibold">
+              {percentage(
+                spendComparison.change
+              )}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-xl font-semibold">
+            16mm Pert-Al-Pert Pipe
+          </h2>
+
+          <p className="text-sm text-slate-500">
+            Tweetop HSPAP100, HSPAP150,
+            HSPAP200 and HSPAP500.
+          </p>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-4">
+          <div className="rounded-xl border bg-white p-5 shadow-sm">
+            <p className="text-sm text-slate-500">
+              {currentYear} YTD Metres
+            </p>
+
+            <p className="mt-2 text-3xl font-semibold">
+              {number(currentPipeMetres)}m
+            </p>
+
+            <p className="mt-1 text-xs text-slate-500">
+              {number(currentPipeCoils)} coils
+            </p>
+          </div>
+
+          <div className="rounded-xl border bg-white p-5 shadow-sm">
+            <p className="text-sm text-slate-500">
+              {previousYear} Same Period
+            </p>
+
+            <p className="mt-2 text-3xl font-semibold">
+              {number(previousPipeMetres)}m
+            </p>
+
+            <p className="mt-1 text-xs text-slate-500">
+              {number(previousPipeCoils)} coils
+            </p>
+          </div>
+
+          <div className="rounded-xl border bg-white p-5 shadow-sm">
+            <p className="text-sm text-slate-500">
+              Metres Difference
+            </p>
+
+            <p className="mt-2 text-3xl font-semibold">
+              {number(
+                pipeMetreComparison.difference
+              )}m
+            </p>
+
+            <p className="mt-1 text-xs text-slate-500">
+              {percentage(
+                pipeCoilComparison.change
+              )} change in coils
+            </p>
+          </div>
+
+          <div className="rounded-xl border bg-white p-5 shadow-sm">
+            <p className="text-sm text-slate-500">
+              Metres Change
+            </p>
+
+            <p className="mt-2 text-3xl font-semibold">
+              {percentage(
+                pipeMetreComparison.change
+              )}
+            </p>
+
+            <p className="mt-1 text-xs text-slate-500">
+              Spend{" "}
+              {percentage(
+                pipeSpendComparison.change
+              )}
+            </p>
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
+          <div className="border-b px-5 py-4">
+            <h3 className="text-lg font-semibold">
+              Monthly Pipe Volume
+            </h3>
+
+            <p className="mt-1 text-sm text-slate-500">
+              Coil and metre volumes purchased,
+              with spend for each month.
+            </p>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-left">
+                <tr>
+                  <th className="px-5 py-3 font-semibold">
+                    Month
+                  </th>
+
+                  <th className="px-5 py-3 text-right font-semibold">
+                    {previousYear} Metres
+                  </th>
+
+                  <th className="px-5 py-3 text-right font-semibold">
+                    {currentYear} Metres
+                  </th>
+
+                  <th className="px-5 py-3 text-right font-semibold">
+                    Difference
+                  </th>
+
+                  <th className="px-5 py-3 text-right font-semibold">
+                    Change
+                  </th>
+
+                  <th className="px-5 py-3 text-right font-semibold">
+                    {currentYear} Coils
+                  </th>
+
+                  <th className="px-5 py-3 text-right font-semibold">
+                    {currentYear} Spend
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y">
+                {monthlyPipe.map((row) => {
+                  const futureMonth =
+                    row.monthIndex > latestMonth;
+
+                  return (
+                    <tr
+                      key={row.month}
+                      className={
+                        futureMonth
+                          ? "text-slate-400"
+                          : ""
+                      }
+                    >
+                      <td className="px-5 py-3 font-medium">
+                        {row.month}
+
+                        {row.monthIndex ===
+                          latestMonth && (
+                          <span className="ml-2 text-xs font-normal text-slate-500">
+                            to {ordinal(latestDay)}
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="px-5 py-3 text-right">
+                        {futureMonth
+                          ? "Ã¢â‚¬â€"
+                          : `${number(
+                              row.previousMetres
+                            )}m`}
+                      </td>
+
+                      <td className="px-5 py-3 text-right">
+                        {futureMonth
+                          ? "Ã¢â‚¬â€"
+                          : `${number(
+                              row.currentMetres
+                            )}m`}
+                      </td>
+
+                      <td className="px-5 py-3 text-right">
+                        {futureMonth
+                          ? "Ã¢â‚¬â€"
+                          : `${number(
+                              row.differenceMetres
+                            )}m`}
+                      </td>
+
+                      <td className="px-5 py-3 text-right font-medium">
+                        {futureMonth
+                          ? "Ã¢â‚¬â€"
+                          : percentage(
+                              row.changeMetres
+                            )}
+                      </td>
+
+                      <td className="px-5 py-3 text-right">
+                        {futureMonth
+                          ? "Ã¢â‚¬â€"
+                          : number(
+                              row.currentCoils
+                            )}
+                      </td>
+
+                      <td className="px-5 py-3 text-right">
+                        {futureMonth
+                          ? "Ã¢â‚¬â€"
+                          : money(
+                              row.currentSpend
+                            )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+
+              <tfoot className="border-t bg-slate-50 font-semibold">
+                <tr>
+                  <td className="px-5 py-4">
+                    YTD Total
+                  </td>
+
+                  <td className="px-5 py-4 text-right">
+                    {number(previousPipeMetres)}m
+                  </td>
+
+                  <td className="px-5 py-4 text-right">
+                    {number(currentPipeMetres)}m
+                  </td>
+
+                  <td className="px-5 py-4 text-right">
+                    {number(
+                      pipeMetreComparison.difference
+                    )}m
+                  </td>
+
+                  <td className="px-5 py-4 text-right">
+                    {percentage(
+                      pipeMetreComparison.change
+                    )}
+                  </td>
+
+                  <td className="px-5 py-4 text-right">
+                    {number(currentPipeCoils)}
+                  </td>
+
+                  <td className="px-5 py-4 text-right">
+                    {money(currentPipeSpend)}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
+        <div className="border-b px-5 py-4">
+          <h2 className="text-lg font-semibold">
+            Monthly Purchase Spend
+          </h2>
+
+          <p className="mt-1 text-sm text-slate-500">
+            All products: {currentYear} compared
+            with the equivalent period in{" "}
+            {previousYear}.
+          </p>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-left">
+              <tr>
+                <th className="px-5 py-3 font-semibold">
+                  Month
+                </th>
+
+                <th className="px-5 py-3 text-right font-semibold">
+                  {previousYear}
+                </th>
+
+                <th className="px-5 py-3 text-right font-semibold">
+                  {currentYear}
+                </th>
+
+                <th className="px-5 py-3 text-right font-semibold">
+                  Difference
+                </th>
+
+                <th className="px-5 py-3 text-right font-semibold">
+                  Change
+                </th>
+              </tr>
+            </thead>
+
+            <tbody className="divide-y">
+              {monthlySpend.map((row) => {
+                const futureMonth =
+                  row.monthIndex > latestMonth;
+
+                return (
+                  <tr
+                    key={row.month}
+                    className={
+                      futureMonth
+                        ? "text-slate-400"
+                        : ""
+                    }
+                  >
+                    <td className="px-5 py-3 font-medium">
+                      {row.month}
+
+                      {row.monthIndex ===
+                        latestMonth && (
+                        <span className="ml-2 text-xs font-normal text-slate-500">
+                          to {ordinal(latestDay)}
+                        </span>
+                      )}
+                    </td>
+
+                    <td className="px-5 py-3 text-right">
+                      {futureMonth
+                        ? "Ã¢â‚¬â€"
+                        : money(row.previous)}
+                    </td>
+
+                    <td className="px-5 py-3 text-right">
+                      {futureMonth
+                        ? "Ã¢â‚¬â€"
+                        : money(row.current)}
+                    </td>
+
+                    <td className="px-5 py-3 text-right">
+                      {futureMonth
+                        ? "Ã¢â‚¬â€"
+                        : money(row.difference)}
+                    </td>
+
+                    <td className="px-5 py-3 text-right font-medium">
+                      {futureMonth
+                        ? "Ã¢â‚¬â€"
+                        : percentage(row.change)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+
+            <tfoot className="border-t bg-slate-50 font-semibold">
+              <tr>
+                <td className="px-5 py-4">
+                  YTD Total
+                </td>
+
+                <td className="px-5 py-4 text-right">
+                  {money(previousYtd)}
+                </td>
+
+                <td className="px-5 py-4 text-right">
+                  {money(currentYtd)}
+                </td>
+
+                <td className="px-5 py-4 text-right">
+                  {money(
+                    spendComparison.difference
+                  )}
+                </td>
+
+                <td className="px-5 py-4 text-right">
+                  {percentage(
+                    spendComparison.change
+                  )}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="rounded-xl border bg-white p-5 shadow-sm">
+          <p className="text-sm text-slate-500">
+            Purchase Orders Imported
+          </p>
+
+          <p className="mt-2 text-2xl font-semibold">
+            {purchaseOrderCount.toLocaleString()}
+          </p>
+        </div>
+
+        <div className="rounded-xl border bg-white p-5 shadow-sm">
+          <p className="text-sm text-slate-500">
+            Purchase Lines Imported
+          </p>
+
+          <p className="mt-2 text-2xl font-semibold">
+            {purchaseLineCount.toLocaleString()}
+          </p>
+        </div>
+      </div>
+    </main>
+  );
+}

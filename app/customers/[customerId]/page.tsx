@@ -30,6 +30,12 @@ export default async function CustomerPage({
   membership?.role?.name === "Accounts";
 
   const isSalesAgent = membership?.role?.name === "Sales Agent";
+  
+  const canViewCredit =
+  membership.role?.permissions.some(
+    ({ permission }) =>
+      permission.key === "credit.view"
+  ) === true;
 
   if (!membership) {
     notFound();
@@ -154,45 +160,49 @@ const updateCustomerAction = updateCustomer;
       </section>
 
       <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-5">
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-  <p className="text-sm text-slate-500">Last order</p>
+  <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <p className="text-sm text-slate-500">Last order</p>
+    <p className="mt-2 text-2xl font-bold text-slate-950">
+      {customer.lastInvoiceDate
+        ? customer.lastInvoiceDate.toLocaleDateString("en-GB")
+        : "No sales history"}
+    </p>
+  </div>
 
-  <p className="mt-2 text-2xl font-bold text-slate-950">
-    {customer.lastInvoiceDate
-      ? customer.lastInvoiceDate.toLocaleDateString("en-GB")
-      : "No sales history"}
-  </p>
-</div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <p className="text-sm text-slate-500">Credit limit</p>
-          <p className="mt-2 text-2xl font-bold text-slate-950">
-            {customer.creditLimit != null
-              ? `£${customer.creditLimit.toLocaleString("en-GB")}`
-              : "—"}
-          </p>
-        </div>
+  {canViewCredit && (
+    <>
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <p className="text-sm text-slate-500">Credit limit</p>
+        <p className="mt-2 text-2xl font-bold text-slate-950">
+          {customer.creditLimit != null
+            ? `£${customer.creditLimit.toLocaleString("en-GB")}`
+            : "—"}
+        </p>
+      </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <p className="text-sm text-slate-500">Current balance</p>
-          <p className="mt-2 text-2xl font-bold text-slate-950">
-            £{(customer.currentBalance ?? 0).toLocaleString("en-GB")}
-          </p>
-        </div>
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <p className="text-sm text-slate-500">Current balance</p>
+        <p className="mt-2 text-2xl font-bold text-slate-950">
+          £{(customer.currentBalance ?? 0).toLocaleString("en-GB")}
+        </p>
+      </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <p className="text-sm text-slate-500">Credit used</p>
-          <p className="mt-2 text-2xl font-bold text-slate-950">
-            {creditUsed.toFixed(1)}%
-          </p>
-        </div>
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <p className="text-sm text-slate-500">Credit used</p>
+        <p className="mt-2 text-2xl font-bold text-slate-950">
+          {creditUsed.toFixed(1)}%
+        </p>
+      </div>
+    </>
+  )}
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <p className="text-sm text-slate-500">Buying group</p>
-          <p className="mt-2 text-2xl font-bold text-slate-950">
-            {customer.buyingGroup ?? "—"}
-          </p>
-        </div>
-      </section>
+  <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <p className="text-sm text-slate-500">Buying group</p>
+    <p className="mt-2 text-2xl font-bold text-slate-950">
+      {customer.buyingGroup ?? "—"}
+    </p>
+  </div>
+</section>
 
       <section className="grid gap-6 xl:grid-cols-3">
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm xl:col-span-2">

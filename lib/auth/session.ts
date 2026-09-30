@@ -1,25 +1,70 @@
-import { createHash, randomBytes } from "crypto";
+import {
+  createHash,
+  randomBytes,
+} from "crypto";
 import { cookies } from "next/headers";
 
 import { prisma } from "../prisma";
 
 const SESSION_COOKIE_NAME = "odiniq_session";
-const SESSION_LENGTH_DAYS = 7;
+const DEFAULT_SESSION_LENGTH_DAYS = 7;
 
-function hashSessionToken(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
+type CreateSessionOptions = {
+  durationHours?: number;
+};
+
+function hashSessionToken(
+  token: string
+): string {
+  return createHash("sha256")
+    .update(token)
+    .digest("hex");
 }
 
 export async function createSession(
-  userId: number
+  userId: number,
+  options: CreateSessionOptions = {}
 ): Promise<void> {
   const token = randomBytes(32).toString("hex");
   const tokenHash = hashSessionToken(token);
 
   const expiresAt = new Date();
-  expiresAt.setDate(
-    expiresAt.getDate() + SESSION_LENGTH_DAYS
-  );
+
+  /*
+   * Normal OdinIQ users keep the existing
+   * seven-day session.
+   *
+   * Special flows such as the public demo can
+   * request a shorter session without changing
+   * normal login behaviour.
+   */
+  if (
+    options.durationHours !== undefined
+  ) {
+    if (
+      !Number.isFinite(
+        options.durationHours
+      ) ||
+      options.durationHours <= 0
+    ) {
+      throw new Error(
+        "Session duration must be greater than zero."
+      );
+    }
+
+    expiresAt.setTime(
+      expiresAt.getTime() +
+        options.durationHours *
+          60 *
+          60 *
+          1000
+    );
+  } else {
+    expiresAt.setDate(
+      expiresAt.getDate() +
+        DEFAULT_SESSION_LENGTH_DAYS
+    );
+  }
 
   /*
    * Find the companies this user currently has
@@ -63,39 +108,50 @@ export async function createSession(
 
   const cookieStore = await cookies();
 
-  cookieStore.set(SESSION_COOKIE_NAME, token, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure:
-      process.env.NODE_ENV === "production",
-    expires: expiresAt,
-    path: "/",
-  });
+  cookieStore.set(
+    SESSION_COOKIE_NAME,
+    token,
+    {
+      httpOnly: true,
+      sameSite: "lax",
+      secure:
+        process.env.NODE_ENV ===
+        "production",
+      expires: expiresAt,
+      path: "/",
+    }
+  );
 }
 
 export async function getCurrentSession() {
   const cookieStore = await cookies();
 
   const token =
-    cookieStore.get(SESSION_COOKIE_NAME)?.value;
+    cookieStore.get(
+      SESSION_COOKIE_NAME
+    )?.value;
 
   if (!token) {
     return null;
   }
 
-  const tokenHash = hashSessionToken(token);
+  const tokenHash =
+    hashSessionToken(token);
 
-  const session = await prisma.session.findUnique({
-    where: {
-      tokenHash,
-    },
-  });
+  const session =
+    await prisma.session.findUnique({
+      where: {
+        tokenHash,
+      },
+    });
 
   if (!session) {
     return null;
   }
 
-  if (session.expiresAt < new Date()) {
+  if (
+    session.expiresAt < new Date()
+  ) {
     return null;
   }
 

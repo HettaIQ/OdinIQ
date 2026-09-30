@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 
 import { getApiCompanyContext } from "@/lib/auth/getApiCompanyContext";
+import { isPublicDemoContext } from "@/lib/auth/isPublicDemoContext";
 
 type SpreadsheetRow = unknown[];
 type MappedRow = Record<string, unknown>;
@@ -65,6 +66,15 @@ export async function POST(req: Request) {
   user,
   membership,
 } = companyContext;
+
+if (isPublicDemoContext(companyContext)) {
+  return NextResponse.json(
+    {
+      message: "The public OdinIQ demo is read-only.",
+    },
+    { status: 403 }
+  );
+}
 
 const canImport =
   user.platformRole === "SUPER_ADMIN" ||

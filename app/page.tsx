@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { enterDemo } from "@/app/demo/actions";
 
 const services = [
   {
@@ -275,12 +276,14 @@ export default function Home() {
             </p>
 
             <div className="mt-10 flex flex-wrap gap-4">
-              <a
-                href="#demo"
-                className="rounded-xl bg-[#d4af37] px-7 py-4 font-bold text-[#080808] no-underline"
-              >
-                Explore Live Demo
-              </a>
+             <form action={enterDemo}>
+  <button
+    type="submit"
+    className="rounded-xl bg-[#d4af37] px-7 py-4 font-bold text-[#080808]"
+  >
+    Explore Live Demo
+  </button>
+</form>
 
               <a
                 href="#contact"
@@ -664,13 +667,14 @@ export default function Home() {
                   workspace.
                 </p>
 
-                <button
-                  type="button"
-                  className="mt-7 w-full cursor-not-allowed rounded-xl bg-[#d4af37] px-5 py-4 font-bold text-[#080808] opacity-60"
-                  title="Live demo access will be connected next"
-                >
-                  Explore Live Demo — Coming Next
-                </button>
+                <form action={enterDemo}>
+  <button
+    type="submit"
+    className="mt-7 w-full rounded-xl bg-[#d4af37] px-5 py-4 font-bold text-[#080808]"
+  >
+    Explore Live Demo
+  </button>
+</form>
               </div>
             </div>
           </div>

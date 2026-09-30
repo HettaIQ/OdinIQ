@@ -28,12 +28,18 @@ model Company {
   goodsDespatchNotes      GoodsDespatchNote[]
   salesInvoices           SalesInvoice[]
   salesOrders             SalesOrder[]
+  purchaseOrders          PurchaseOrder[]
+  supplierBills           SupplierBill[]
   customerAccountAliases  CustomerAccountAlias[]
   productCostHistories    ProductCostHistory[]
   productAliases          ProductAlias[]
   territories             Territory[]
   customerBranches        CustomerBranch[]
   territoryAgentHistories TerritoryAgentHistory[]
+  warehouseLocations      WarehouseLocation[]
+  productStockLocations   ProductStockLocation[]
+  stocktakeSessions       StocktakeSession[]
+  stocktakeLines          StocktakeLine[]
 }
 
 model User {
@@ -42,14 +48,18 @@ model User {
   email        String  @unique
   passwordHash String?
 
-  platformRole String  @default("USER")
-  active       Boolean @default(true)
+  platformRole String @default("USER")
+
+  // Personal Odin voice preference.
+  // Null means use the company's default Odin voice.
+  odinVoiceId String?
+  active      Boolean @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-    memberships     CompanyMembership[]
-  sessions        Session[]
+  memberships      CompanyMembership[]
+  sessions         Session[]
   activationTokens AccountActivationToken[]
 }
 
@@ -75,7 +85,7 @@ model Session {
 model AccountActivationToken {
   id Int @id @default(autoincrement())
 
-  tokenHash String @unique
+  tokenHash String    @unique
   expiresAt DateTime
   usedAt    DateTime?
 
@@ -638,6 +648,12 @@ model Product {
   sellPrice Float?
   margin    Float?
 
+  // Current stock-on-hand imported from the accounting/inventory system.
+  stockQuantity Float?
+
+  // When the stock figure was last refreshed by an import.
+  stockQuantityUpdatedAt DateTime?
+
   active Boolean @default(true)
 
   createdAt DateTime @default(now())
@@ -646,6 +662,8 @@ model Product {
   merchantPrices MerchantPrice[]
   costHistory    ProductCostHistory[]
   aliases        ProductAlias[]
+  stockLocations ProductStockLocation[]
+  stocktakeLines StocktakeLine[]
 
   @@unique([companyId, productCode])
   @@index([companyId])
@@ -962,15 +980,256 @@ model SalesInvoiceLine {
   salesInvoiceId Int
   salesInvoice   SalesInvoice @relation(fields: [salesInvoiceId], references: [id], onDelete: Cascade)
 
-  lineNumber  Int?
-  stockCode   String?
-  description String?
-  quantity    Float?
-  netValue    Float?
-  vatValue    Float?
+  lineNumber       Int?
+  stockCode        String?
+  description      String?
+  quantity         Float?
+  originalNetValue Float?
+  netValueDiscount Float?
+  netValue         Float?
+  vatValue         Float?
 
   createdAt DateTime @default(now())
 
   @@index([salesInvoiceId])
   @@index([stockCode])
+}
+
+model PurchaseOrder {
+  id Int @id @default(autoincrement())
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  purchaseOrderNumber String
+  orderDate           DateTime?
+
+  supplierAccountCode String?
+  supplierName        String?
+
+  supplierOrderNumber String?
+  reference           String?
+
+  status    String?
+  delivered Boolean @default(false)
+  posted    Boolean @default(false)
+
+  netValue Float?
+
+  source String @default("SAGE")
+
+  importedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  lines PurchaseOrderLine[]
+
+  @@unique([companyId, purchaseOrderNumber])
+  @@index([companyId, supplierAccountCode])
+  @@index([companyId, supplierName])
+  @@index([companyId, orderDate])
+}
+
+model PurchaseOrderLine {
+  id Int @id @default(autoincrement())
+
+  purchaseOrderId Int
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  lineNumber Int?
+
+  productCode String?
+  description String?
+
+  quantity          Float?
+  quantityDelivered Float?
+  unitOfSale        String?
+
+  discountAmount Float?
+  unitCost       Float?
+  netValue       Float?
+  vatValue       Float?
+  grossValue     Float?
+
+  createdAt DateTime @default(now())
+
+  @@index([purchaseOrderId])
+  @@index([productCode])
+}
+
+model SupplierBill {
+  id Int @id @default(autoincrement())
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  supplierAccountCode String?
+  supplierName        String?
+
+  invoiceNumber String
+  invoiceDate   DateTime?
+
+  customerReference   String?
+  supplierOrderNumber String?
+  deliveryNoteNumber  String?
+  deliveryDate        DateTime?
+
+  netValue   Float?
+  vatValue   Float?
+  grossValue Float?
+
+  currency String @default("GBP")
+  source   String @default("SUPPLIER_PDF")
+
+  importedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  lines SupplierBillLine[]
+
+  @@unique([companyId, supplierAccountCode, invoiceNumber])
+  @@index([companyId, supplierAccountCode])
+  @@index([companyId, supplierName])
+  @@index([companyId, invoiceDate])
+}
+
+model SupplierBillLine {
+  id Int @id @default(autoincrement())
+
+  supplierBillId Int
+  supplierBill   SupplierBill @relation(fields: [supplierBillId], references: [id], onDelete: Cascade)
+
+  lineNumber Int?
+
+  productCode String?
+  description String?
+
+  quantity   Float?
+  unitPrice  Float?
+  discount   Float?
+  netValue   Float?
+  vatValue   Float?
+  grossValue Float?
+
+  createdAt DateTime @default(now())
+
+  @@index([supplierBillId])
+  @@index([productCode])
+}
+
+model WarehouseLocation {
+  id Int @id @default(autoincrement())
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  code String
+
+  description    String?
+  aisle          String?
+  bay            String?
+  shelf          String?
+  notes          String?
+  stocktakeOrder Int?
+
+  active Boolean @default(true)
+
+  stockItems     ProductStockLocation[]
+  stocktakeLines StocktakeLine[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([companyId, active])
+}
+
+model ProductStockLocation {
+  id Int @id @default(autoincrement())
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  productId Int
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  locationId Int
+  location   WarehouseLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  quantity Float @default(0)
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, productId, locationId])
+  @@index([companyId])
+  @@index([productId])
+  @@index([locationId])
+}
+
+model StocktakeSession {
+  id Int @id @default(autoincrement())
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  reference String
+  status    String @default("OPEN")
+
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  lines StocktakeLine[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, reference])
+  @@index([companyId])
+  @@index([companyId, status])
+  @@index([companyId, startedAt])
+}
+
+model StocktakeLine {
+  id Int @id @default(autoincrement())
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  stocktakeSessionId Int
+  stocktakeSession   StocktakeSession @relation(fields: [stocktakeSessionId], references: [id], onDelete: Cascade)
+
+  productId Int
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  locationId Int
+  location   WarehouseLocation @relation(fields: [locationId], references: [id], onDelete: Restrict)
+
+  /**
+   * Frozen quantities at the moment
+   * the stocktake is started.
+   */
+  expectedSystemQuantity   Float?
+  expectedLocationQuantity Float
+
+  /**
+   * Filled when the completed blind
+   * stocktake is uploaded.
+   */
+  physicalCount Float?
+  notes         String?
+
+  countedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([stocktakeSessionId, productId, locationId])
+  @@index([companyId])
+  @@index([stocktakeSessionId])
+  @@index([productId])
+  @@index([locationId])
 }

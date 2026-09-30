@@ -70,6 +70,13 @@ const {
       membership.role?.name ===
         "Sales Agent";
 
+        const canViewCredit =
+  context.user.platformRole === "SUPER_ADMIN" ||
+  membership.role?.permissions.some(
+    ({ permission }) =>
+      permission.key === "credit.view"
+  ) === true;
+
     /*
      * CUSTOMER-SPECIFIC QUESTIONS
      */
@@ -138,14 +145,14 @@ const {
           ]
         )
       ) {
-        if (isAgent) {
-          return NextResponse.json({
-            success: false,
-            answer:
-              "Credit limits, balances and credit exposure are not available to sales agents.",
-            customerId: customer.id,
-          });
-        }
+        if (!canViewCredit) {
+  return NextResponse.json({
+    success: false,
+    answer:
+      "You do not have permission to view credit limits, balances or credit exposure.",
+    customerId: customer.id,
+  });
+}
 
         return NextResponse.json({
           success: true,

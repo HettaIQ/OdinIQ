@@ -2,15 +2,15 @@
 
 import { revalidatePath } from "next/cache";
 
-import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
+import { requireCompanyWriteContext } from "@/lib/auth/requireCompanyWriteContext";
 import { prisma } from "@/lib/prisma";
 
 export async function completeTask(taskId: number) {
-  const {
-    user,
-    membership,
-    companyId,
-  } = await requireCompanyContext();
+ const {
+  user,
+  membership,
+  companyId,
+} = await requireCompanyWriteContext();
 
   const canCompleteTasks =
     user.platformRole === "SUPER_ADMIN" ||
@@ -79,7 +79,7 @@ export async function createTaskFromVoiceNote(voiceNoteId: number) {
     user,
     membership,
     companyId,
-  } = await requireCompanyContext();
+  } = await requireCompanyWriteContext();
 
   const canCreateTasks =
     user.platformRole === "SUPER_ADMIN" ||
