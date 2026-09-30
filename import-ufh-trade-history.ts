@@ -1,19 +1,32 @@
 ﻿import * as XLSX from "xlsx";
-import { prisma } from "./lib/prisma";
+import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import { PrismaClient } from "@prisma/client";
 
 const FILE_NAME = "UFH Trade Direct All Sales.xlsx";
 
 const COMPANY_ID = 1;
 const BUSINESS_UNIT_ID = 2;
+const PROGRESS_EVERY = 250;
 
 /*
- * SAFETY:
- * Only the first 10 UFH Trade documents
- * will be imported during this test.
+ * Use a dedicated quiet Prisma client for this historical import.
+ * This avoids printing 70,000+ SQL queries.
  */
-const TEST_DOCUMENT_LIMIT = 10;
+const adapter = new PrismaBetterSqlite3({
+  url: process.env.DATABASE_URL ?? "file:./dev.db",
+});
+
+const prisma = new PrismaClient({
+  adapter,
+  log: ["error", "warn"],
+});
 
 type RawRow = unknown[];
+
+type ImportFailure = {
+  invoiceNumber: string;
+  error: string;
+};
 
 function text(value: unknown): string {
   return String(value ?? "").trim();
@@ -54,9 +67,7 @@ function excelDateToDate(
   const date =
     new Date(milliseconds);
 
-  return Number.isNaN(
-    date.getTime()
-  )
+  return Number.isNaN(date.getTime())
     ? null
     : date;
 }
@@ -64,21 +75,19 @@ function excelDateToDate(
 function roundMoney(
   value: number
 ): number {
-  return Number(
-    value.toFixed(2)
-  );
+  return Number(value.toFixed(2));
 }
 
 async function main() {
   console.log("");
   console.log(
-    "======================================"
+    "=============================================="
   );
   console.log(
-    " UFH TRADE DIRECT - 10 DOCUMENT TEST"
+    " UFH TRADE DIRECT - FULL HISTORICAL IMPORT"
   );
   console.log(
-    "======================================"
+    "=============================================="
   );
   console.log("");
 
@@ -91,12 +100,13 @@ async function main() {
       select: {
         id: true,
         name: true,
+        slug: true,
       },
     });
 
   if (!businessUnit) {
     throw new Error(
-      "UFH Trade Direct Business Unit was not found."
+      `Business Unit ${BUSINESS_UNIT_ID} was not found.`
     );
   }
 
@@ -104,6 +114,9 @@ async function main() {
     `Target: ${businessUnit.name} (Business Unit ${businessUnit.id})`
   );
 
+  /*
+   * Read source workbook.
+   */
   const workbook =
     XLSX.readFile(FILE_NAME);
 
@@ -136,8 +149,12 @@ async function main() {
           text(row[3])
       );
 
+  console.log(
+    `Source transaction rows: ${dataRows.length.toLocaleString()}`
+  );
+
   /*
-   * Group Sage lines by document number.
+   * Group all Sage lines by document number.
    */
   const documents =
     new Map<
@@ -166,292 +183,631 @@ async function main() {
     );
   }
 
-  /*
-   * Take ONLY the first 10 documents.
-   */
-  const testDocuments =
-    [...documents.entries()]
-      .slice(
-        0,
-        TEST_DOCUMENT_LIMIT
-      );
-
   console.log(
-    `Test documents selected: ${testDocuments.length}`
+    `Source documents: ${documents.size.toLocaleString()}`
+  );
+
+  /*
+   * Calculate source control totals BEFORE importing.
+   */
+  let sourceNet = 0;
+  let sourceVat = 0;
+  let sourceGross = 0;
+
+  for (const row of dataRows) {
+    const originalNet =
+      numberOrNull(row[8]) ?? 0;
+
+    const discount =
+      numberOrNull(row[9]) ?? 0;
+
+    const vat =
+      numberOrNull(row[10]) ?? 0;
+
+    sourceNet +=
+      originalNet -
+      discount;
+
+    sourceVat += vat;
+  }
+
+  sourceNet =
+    roundMoney(sourceNet);
+
+  sourceVat =
+    roundMoney(sourceVat);
+
+  sourceGross =
+    roundMoney(
+      sourceNet +
+        sourceVat
+    );
+
+  console.log("");
+  console.log("SOURCE CONTROL TOTALS");
+  console.log(
+    `Net:   £${sourceNet.toFixed(2)}`
+  );
+  console.log(
+    `VAT:   £${sourceVat.toFixed(2)}`
+  );
+  console.log(
+    `Gross: £${sourceGross.toFixed(2)}`
   );
   console.log("");
 
-  let importedDocuments = 0;
+  /*
+   * Safety check.
+   *
+   * These values came from our validated preview.
+   * If the workbook changes unexpectedly, stop.
+   */
+  if (
+    documents.size !== 15098 ||
+    dataRows.length !== 74139 ||
+    sourceNet !== 10426849.64
+  ) {
+    throw new Error(
+      [
+        "SOURCE SAFETY CHECK FAILED.",
+        "",
+        "Expected:",
+        "15,098 documents",
+        "74,139 transaction rows",
+        "£10,426,849.64 net",
+        "",
+        "The source workbook does not match the file we previewed.",
+        "No full import will be attempted.",
+      ].join("\n")
+    );
+  }
+
+  console.log(
+    "Source safety check: PASSED"
+  );
+  console.log("");
+
+  const failures: ImportFailure[] = [];
+
+  let processedDocuments = 0;
+  let successfulDocuments = 0;
   let importedLines = 0;
 
-  let totalNet = 0;
-  let totalVat = 0;
-  let totalGross = 0;
+  const startedAt = Date.now();
 
   for (
     const [
       invoiceNumber,
       invoiceRows,
-    ] of testDocuments
+    ] of documents.entries()
   ) {
-    const firstRow =
-      invoiceRows[0];
+    processedDocuments++;
 
-    if (!firstRow) {
-      continue;
-    }
+    try {
+      const firstRow =
+        invoiceRows[0];
 
-    const customerAccountCode =
-      text(firstRow[1]) || null;
-
-    const customerName =
-      text(firstRow[2]) || null;
-
-    const invoiceDate =
-      excelDateToDate(
-        firstRow[4]
-      );
-
-    const invoiceType =
-      text(firstRow[11]) || null;
-
-    let netValue = 0;
-    let vatValue = 0;
-
-    for (
-      const row of invoiceRows
-    ) {
-      const originalNet =
-        numberOrNull(row[8]) ?? 0;
-
-      const discount =
-        numberOrNull(row[9]) ?? 0;
-
-      netValue +=
-        originalNet -
-        discount;
-
-      vatValue +=
-        numberOrNull(row[10]) ?? 0;
-    }
-
-    netValue =
-      roundMoney(netValue);
-
-    vatValue =
-      roundMoney(vatValue);
-
-    const grossValue =
-      roundMoney(
-        netValue + vatValue
-      );
-
-    /*
-     * IMPORTANT:
-     * The unique key includes Business Unit 2,
-     * so a UFH invoice can safely have the same
-     * invoice number as a Hetta invoice.
-     */
-    const savedInvoice =
-      await prisma.salesInvoice.upsert({
-        where: {
-          companyId_businessUnitId_invoiceNumber: {
-            companyId:
-              COMPANY_ID,
-            businessUnitId:
-              BUSINESS_UNIT_ID,
-            invoiceNumber,
-          },
-        },
-
-        update: {
-          invoiceType,
-          invoiceDate,
-          customerAccountCode,
-          customerName,
-          netValue,
-          vatValue,
-          grossValue,
-        },
-
-        create: {
-          companyId:
-            COMPANY_ID,
-
-          businessUnitId:
-            BUSINESS_UNIT_ID,
-
-          invoiceNumber,
-          invoiceType,
-          invoiceDate,
-          customerAccountCode,
-          customerName,
-          netValue,
-          vatValue,
-          grossValue,
-        },
-      });
-
-    /*
-     * This makes the script safe to rerun.
-     * Existing UFH lines for this document
-     * are replaced with the Sage source lines.
-     */
-    await prisma.salesInvoiceLine.deleteMany({
-      where: {
-        salesInvoiceId:
-          savedInvoice.id,
-      },
-    });
-
-    let documentLineCount = 0;
-
-    for (
-      const row of invoiceRows
-    ) {
-      const stockCode =
-        text(row[5]);
-
-      const description =
-        text(row[6]);
-
-      /*
-       * Preserve memo/reference lines such as M.
-       * Only completely empty lines are ignored.
-       */
-      if (
-        !stockCode &&
-        !description
-      ) {
-        continue;
+      if (!firstRow) {
+        throw new Error(
+          "Document contains no rows."
+        );
       }
 
-      const originalNetValue =
-        numberOrNull(row[8]);
+      const customerAccountCode =
+        text(firstRow[1]) || null;
 
-      const netValueDiscount =
-        numberOrNull(row[9]) ?? 0;
+      const customerName =
+        text(firstRow[2]) || null;
 
-      const lineNetValue =
-        originalNetValue === null
-          ? null
-          : roundMoney(
-              originalNetValue -
-                netValueDiscount
-            );
+      const invoiceDate =
+        excelDateToDate(
+          firstRow[4]
+        );
 
-      await prisma.salesInvoiceLine.create({
-        data: {
-          salesInvoiceId:
-            savedInvoice.id,
+      const invoiceType =
+        text(firstRow[11]) || null;
 
-          stockCode:
-            stockCode || null,
+      let documentNet = 0;
+      let documentVat = 0;
 
-          description:
-            description || null,
+      for (
+        const row of invoiceRows
+      ) {
+        const originalNet =
+          numberOrNull(row[8]) ?? 0;
 
-          quantity:
-            numberOrNull(row[7]),
+        const discount =
+          numberOrNull(row[9]) ?? 0;
 
-          originalNetValue,
+        documentNet +=
+          originalNet -
+          discount;
 
-          netValueDiscount,
+        documentVat +=
+          numberOrNull(row[10]) ?? 0;
+      }
 
-          netValue:
-            lineNetValue,
+      documentNet =
+        roundMoney(
+          documentNet
+        );
 
-          vatValue:
-            numberOrNull(row[10]),
-        },
+      documentVat =
+        roundMoney(
+          documentVat
+        );
+
+      const documentGross =
+        roundMoney(
+          documentNet +
+            documentVat
+        );
+
+      /*
+       * Use a transaction for each document.
+       *
+       * If one invoice fails halfway through,
+       * that document rolls back without damaging
+       * the rest of the historical import.
+       */
+      const lineCount =
+        await prisma.$transaction(
+          async (tx) => {
+            const savedInvoice =
+              await tx.salesInvoice.upsert({
+                where: {
+                  companyId_businessUnitId_invoiceNumber: {
+                    companyId:
+                      COMPANY_ID,
+
+                    businessUnitId:
+                      BUSINESS_UNIT_ID,
+
+                    invoiceNumber,
+                  },
+                },
+
+                update: {
+                  invoiceType,
+                  invoiceDate,
+                  customerAccountCode,
+                  customerName,
+                  netValue:
+                    documentNet,
+                  vatValue:
+                    documentVat,
+                  grossValue:
+                    documentGross,
+                },
+
+                create: {
+                  companyId:
+                    COMPANY_ID,
+
+                  businessUnitId:
+                    BUSINESS_UNIT_ID,
+
+                  invoiceNumber,
+                  invoiceType,
+                  invoiceDate,
+                  customerAccountCode,
+                  customerName,
+                  netValue:
+                    documentNet,
+                  vatValue:
+                    documentVat,
+                  grossValue:
+                    documentGross,
+                },
+              });
+
+            /*
+             * Makes reruns idempotent:
+             * replace this document's lines
+             * with the current Sage source lines.
+             */
+            await tx.salesInvoiceLine.deleteMany({
+              where: {
+                salesInvoiceId:
+                  savedInvoice.id,
+              },
+            });
+
+            let createdLines = 0;
+
+            for (
+              const row of invoiceRows
+            ) {
+              const stockCode =
+                text(row[5]);
+
+              const description =
+                text(row[6]);
+
+              /*
+               * Keep historic memo/reference lines.
+               * Ignore only genuinely empty lines.
+               */
+              if (
+                !stockCode &&
+                !description
+              ) {
+                continue;
+              }
+
+              const originalNetValue =
+                numberOrNull(row[8]);
+
+              const netValueDiscount =
+                numberOrNull(row[9]) ??
+                0;
+
+              const lineNetValue =
+                originalNetValue ===
+                null
+                  ? null
+                  : roundMoney(
+                      originalNetValue -
+                        netValueDiscount
+                    );
+
+              await tx.salesInvoiceLine.create({
+                data: {
+                  salesInvoiceId:
+                    savedInvoice.id,
+
+                  stockCode:
+                    stockCode ||
+                    null,
+
+                  description:
+                    description ||
+                    null,
+
+                  quantity:
+                    numberOrNull(
+                      row[7]
+                    ),
+
+                  originalNetValue,
+
+                  netValueDiscount,
+
+                  netValue:
+                    lineNetValue,
+
+                  vatValue:
+                    numberOrNull(
+                      row[10]
+                    ),
+                },
+              });
+
+              createdLines++;
+            }
+
+            return createdLines;
+          }
+        );
+
+      importedLines +=
+        lineCount;
+
+      successfulDocuments++;
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : String(error);
+
+      failures.push({
+        invoiceNumber,
+        error: message,
       });
 
-      documentLineCount++;
-      importedLines++;
+      console.error("");
+      console.error(
+        `FAILED document ${invoiceNumber}: ${message}`
+      );
+      console.error("");
     }
 
-    importedDocuments++;
+    if (
+      processedDocuments %
+        PROGRESS_EVERY ===
+        0 ||
+      processedDocuments ===
+        documents.size
+    ) {
+      const elapsedSeconds =
+        Math.max(
+          1,
+          Math.round(
+            (Date.now() -
+              startedAt) /
+              1000
+          )
+        );
 
-    totalNet += netValue;
-    totalVat += vatValue;
-    totalGross += grossValue;
+      const rate =
+        processedDocuments /
+        elapsedSeconds;
 
-    console.log(
-      `${invoiceNumber} | ${customerAccountCode ?? ""} | ${customerName ?? ""} | ${invoiceType ?? ""} | ${invoiceDate?.toISOString().slice(0, 10) ?? "NO DATE"} | ${documentLineCount} lines | £${netValue.toFixed(2)}`
-    );
+      const remaining =
+        documents.size -
+        processedDocuments;
+
+      const etaSeconds =
+        rate > 0
+          ? Math.round(
+              remaining /
+                rate
+            )
+          : 0;
+
+      console.log(
+        `Processed ${processedDocuments.toLocaleString()} / ${documents.size.toLocaleString()} | successful ${successfulDocuments.toLocaleString()} | failures ${failures.length} | lines ${importedLines.toLocaleString()} | approx ${etaSeconds}s remaining`
+      );
+    }
   }
 
   console.log("");
   console.log(
-    "======================================"
+    "=============================================="
   );
   console.log(
-    " TEST IMPORT COMPLETE"
+    " IMPORT PHASE COMPLETE"
   );
   console.log(
-    "======================================"
+    "=============================================="
   );
 
-  console.log(
-    `Documents imported: ${importedDocuments}`
-  );
-
-  console.log(
-    `Lines imported: ${importedLines}`
-  );
-
-  console.log(
-    `Net: £${totalNet.toFixed(2)}`
-  );
-
-  console.log(
-    `VAT: £${totalVat.toFixed(2)}`
-  );
-
-  console.log(
-    `Gross: £${totalGross.toFixed(2)}`
-  );
-
-  const ufhInvoiceCount =
-    await prisma.salesInvoice.count({
+  /*
+   * Reconcile the resulting UFH database data.
+   */
+  const storedInvoices =
+    await prisma.salesInvoice.findMany({
       where: {
         companyId:
           COMPANY_ID,
+
         businessUnitId:
           BUSINESS_UNIT_ID,
       },
+
+      select: {
+        id: true,
+        netValue: true,
+        vatValue: true,
+        grossValue: true,
+      },
     });
+
+  let databaseNet = 0;
+  let databaseVat = 0;
+  let databaseGross = 0;
+
+  const storedInvoiceIds =
+    storedInvoices.map(
+      (invoice) =>
+        invoice.id
+    );
+
+  for (
+    const invoice of
+    storedInvoices
+  ) {
+    databaseNet +=
+      invoice.netValue ?? 0;
+
+    databaseVat +=
+      invoice.vatValue ?? 0;
+
+    databaseGross +=
+      invoice.grossValue ?? 0;
+  }
+
+  databaseNet =
+    roundMoney(
+      databaseNet
+    );
+
+  databaseVat =
+    roundMoney(
+      databaseVat
+    );
+
+  databaseGross =
+    roundMoney(
+      databaseGross
+    );
+
+  let databaseLineCount = 0;
+
+  /*
+   * SQLite has a parameter limit, so count lines
+   * in manageable invoice-ID batches.
+   */
+  const ID_BATCH_SIZE = 500;
+
+  for (
+    let index = 0;
+    index <
+    storedInvoiceIds.length;
+    index += ID_BATCH_SIZE
+  ) {
+    const batch =
+      storedInvoiceIds.slice(
+        index,
+        index +
+          ID_BATCH_SIZE
+      );
+
+    databaseLineCount +=
+      await prisma.salesInvoiceLine.count({
+        where: {
+          salesInvoiceId: {
+            in: batch,
+          },
+        },
+      });
+  }
 
   const hettaInvoiceCount =
     await prisma.salesInvoice.count({
       where: {
         companyId:
           COMPANY_ID,
+
         businessUnitId: 1,
       },
     });
 
   console.log("");
+  console.log("SOURCE");
   console.log(
-    `UFH Trade invoices now in Odin: ${ufhInvoiceCount}`
+    `Documents: ${documents.size.toLocaleString()}`
+  );
+  console.log(
+    `Rows:      ${dataRows.length.toLocaleString()}`
+  );
+  console.log(
+    `Net:       £${sourceNet.toFixed(2)}`
+  );
+  console.log(
+    `VAT:       £${sourceVat.toFixed(2)}`
+  );
+  console.log(
+    `Gross:     £${sourceGross.toFixed(2)}`
   );
 
+  console.log("");
+  console.log("ODIN - UFH TRADE");
   console.log(
-    `Hetta invoices still in Odin: ${hettaInvoiceCount}`
+    `Invoices:  ${storedInvoices.length.toLocaleString()}`
+  );
+  console.log(
+    `Lines:     ${databaseLineCount.toLocaleString()}`
+  );
+  console.log(
+    `Net:       £${databaseNet.toFixed(2)}`
+  );
+  console.log(
+    `VAT:       £${databaseVat.toFixed(2)}`
+  );
+  console.log(
+    `Gross:     £${databaseGross.toFixed(2)}`
   );
 
   console.log("");
   console.log(
-    "Only the 10 test documents were written."
+    `Hetta invoices preserved: ${hettaInvoiceCount.toLocaleString()}`
+  );
+
+  console.log("");
+  console.log(
+    `Failed UFH documents: ${failures.length}`
+  );
+
+  if (
+    failures.length > 0
+  ) {
+    console.log("");
+    console.log(
+      "FAILED DOCUMENTS"
+    );
+
+    console.table(
+      failures
+    );
+  }
+
+  const invoiceCountMatches =
+    storedInvoices.length ===
+    documents.size;
+
+  const lineCountMatches =
+    databaseLineCount ===
+    dataRows.length;
+
+  const netMatches =
+    databaseNet ===
+    sourceNet;
+
+  const vatMatches =
+    databaseVat ===
+    sourceVat;
+
+  const grossMatches =
+    databaseGross ===
+    sourceGross;
+
+  const fullyReconciled =
+    failures.length === 0 &&
+    invoiceCountMatches &&
+    lineCountMatches &&
+    netMatches &&
+    vatMatches &&
+    grossMatches &&
+    hettaInvoiceCount ===
+      48046;
+
+  console.log("");
+  console.log(
+    "=============================================="
+  );
+
+  if (fullyReconciled) {
+    console.log(
+      " FULL IMPORT RECONCILIATION: PASSED"
+    );
+  } else {
+    console.log(
+      " FULL IMPORT RECONCILIATION: CHECK REQUIRED"
+    );
+  }
+
+  console.log(
+    "=============================================="
   );
   console.log("");
+
+  console.log(
+    `Invoice count match: ${invoiceCountMatches ? "YES" : "NO"}`
+  );
+
+  console.log(
+    `Line count match:    ${lineCountMatches ? "YES" : "NO"}`
+  );
+
+  console.log(
+    `Net total match:     ${netMatches ? "YES" : "NO"}`
+  );
+
+  console.log(
+    `VAT total match:     ${vatMatches ? "YES" : "NO"}`
+  );
+
+  console.log(
+    `Gross total match:   ${grossMatches ? "YES" : "NO"}`
+  );
+
+  console.log(
+    `Hetta count intact:  ${hettaInvoiceCount === 48046 ? "YES" : "NO"}`
+  );
+
+  console.log("");
+
+  if (!fullyReconciled) {
+    process.exitCode = 1;
+  }
 }
 
 main()
   .catch((error) => {
     console.error("");
     console.error(
-      "UFH Trade test import failed:"
+      "UFH Trade historical import failed:"
     );
     console.error(error);
 
