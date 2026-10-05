@@ -60,9 +60,10 @@ model BusinessUnit {
 
   description String?
 
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  salesInvoices SalesInvoice[]
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  salesInvoices        SalesInvoice[]
+  customerAccountAlias CustomerAccountAlias[]
 
   @@unique([companyId, slug])
   @@index([companyId])
@@ -365,6 +366,9 @@ model CustomerAccountAlias {
   companyId Int
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  businessUnitId Int?
+  businessUnit   BusinessUnit? @relation(fields: [businessUnitId], references: [id], onDelete: SetNull)
+
   customerId Int
   customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
@@ -373,8 +377,9 @@ model CustomerAccountAlias {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([companyId, accountCode])
+  @@unique([companyId, businessUnitId, accountCode])
   @@index([customerId])
+  @@index([businessUnitId])
 }
 
 model CustomerAgentHistory {

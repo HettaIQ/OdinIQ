@@ -50,6 +50,7 @@ type UploadedCount = {
   locationCode: string;
   physicalCount: number;
   notes: string;
+  removeFromList: boolean;
 };
 
 type IssueRow = {
@@ -556,17 +557,7 @@ export async function POST(
        * must not silently become part of the
        * original snapshot.
        */
-      if (
-        !snapshotByKey.has(key)
-      ) {
-        unexpectedRows.push({
-          rowNumber,
-          productCode,
-          location: locationCode,
-        });
-
-        continue;
-      }
+      
 
       if (seenKeys.has(key)) {
         duplicateRows.push({
@@ -627,13 +618,17 @@ export async function POST(
             ).trim()
           : "";
 
+          const removeFromList =
+  normalise(notes) === "remove from list";
+
       uploadedCounts.push({
-        rowNumber,
-        productCode,
-        locationCode,
-        physicalCount,
-        notes,
-      });
+  rowNumber,
+  productCode,
+  locationCode,
+  physicalCount,
+  notes,
+  removeFromList,
+});
     }
 
     /*
@@ -732,9 +727,14 @@ export async function POST(
         continue;
       }
 
-      const locationVariance =
-        count.physicalCount -
-        line.expectedLocationQuantity;
+      const effectivePhysicalCount =
+  count.removeFromList
+    ? 0
+    : count.physicalCount;
+
+const locationVariance =
+  effectivePhysicalCount -
+  line.expectedLocationQuantity;
 
       const existing =
         products.get(
@@ -750,7 +750,7 @@ export async function POST(
             line.expectedLocationQuantity,
 
           physicalCount:
-            count.physicalCount,
+  effectivePhysicalCount,
 
           locationVariance,
 
@@ -758,7 +758,7 @@ export async function POST(
         });
 
         existing.physicalTotal +=
-          count.physicalCount;
+  effectivePhysicalCount;
       } else {
         products.set(
           line.product.id,
@@ -797,7 +797,7 @@ export async function POST(
                   line.expectedLocationQuantity,
 
                 physicalCount:
-                  count.physicalCount,
+  effectivePhysicalCount,
 
                 locationVariance,
 
@@ -806,7 +806,7 @@ export async function POST(
             ],
 
             physicalTotal:
-              count.physicalCount,
+  effectivePhysicalCount,
           }
         );
       }

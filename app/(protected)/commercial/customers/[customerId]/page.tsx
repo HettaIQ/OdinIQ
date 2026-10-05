@@ -770,6 +770,40 @@ const productView =
           a.salesChange -
           b.salesChange
       )[0] ?? null;
+const stoppedProducts =
+  productPerformance
+    .filter(
+      (product) =>
+        product.previousSales > 0 &&
+        product.currentSales === 0
+    )
+    .sort(
+      (a, b) =>
+        b.previousSales -
+        a.previousSales
+    );
+const activeDecliningProducts =
+  productPerformance
+    .filter(
+      (product) =>
+        product.currentSales > 0 &&
+        product.previousSales > 0 &&
+        product.salesChange < 0
+    )
+    .sort(
+      (a, b) =>
+        a.salesChange -
+        b.salesChange
+    );
+
+const topActiveDecliningProducts =
+  activeDecliningProducts.slice(0, 3);
+
+const stoppedProductsCount =
+  stoppedProducts.length;
+
+const topStoppedProducts =
+  stoppedProducts.slice(0, 3);
 
 const displayedProductPerformance =
   productView === "new"
@@ -873,7 +907,46 @@ const totalProductDecline =
   text: string;
   type: "positive" | "opportunity" | "watch";
 }[] = [];
+/*
+ * Products stopped completely
+ */
+if (stoppedProductsCount > 0) {
+  const stoppedSalesValue =
+    stoppedProducts.reduce(
+      (total, product) =>
+        total + product.previousSales,
+      0
+    );
 
+  odinTalkingPoints.push({
+    title: "Ask — Lost Product Lines",
+    text: `${customer.name} has stopped buying ${stoppedProductsCount} ${
+      stoppedProductsCount === 1 ? "product" : "products"
+    } that generated ${formatMoney(
+      stoppedSalesValue
+    )} in ${previousYear}. Ask whether these lines have moved to another supplier, been replaced by alternative products, or whether customer demand has changed.`,
+    type: "watch",
+  });
+}
+/*
+ * Products still active but declining
+ */
+if (topActiveDecliningProducts.length > 0) {
+  const leadingDecline =
+    topActiveDecliningProducts[0];
+
+  odinTalkingPoints.push({
+    title: "Ask — Active Product Decline",
+    text: `${leadingDecline.stockCode} is still being purchased but is down ${formatMoney(
+      Math.abs(leadingDecline.salesChange)
+    )} (${Math.abs(
+      leadingDecline.percentageChange ?? 0
+    ).toFixed(
+      1
+    )}%) versus ${previousYear}. Ask whether demand has reduced, the customer has moved some volume to another product or supplier, or whether there is an opportunity to recover the lost volume.`,
+    type: "watch",
+  });
+}
 /*
  * Overall account performance
  */
@@ -1056,6 +1129,53 @@ if (growthOpportunity) {
   });
 }
 
+const stoppedProductsSalesValue =
+  stoppedProducts.reduce(
+    (total, product) =>
+      total + product.previousSales,
+    0
+  );
+
+const meetingPriorities = [
+  productShiftDeclineCode && productShiftGrowthCode
+    ? {
+        title: "Product Shift",
+        text: `${productShiftDeclineCode} ↓ / ${productShiftGrowthCode} ↑`,
+        type: "opportunity" as const,
+      }
+    : null,
+
+  stoppedProductsCount > 0
+  ? {
+      title: "Recovery",
+      text: `${stoppedProductsCount} stopped ${
+        stoppedProductsCount === 1 ? "product" : "products"
+      } · ${formatMoney(stoppedProductsSalesValue)} prior-year sales`,
+      type: "watch" as const,
+    }
+    : null,
+
+  topActiveDecliningProducts[0]
+  ? {
+      title: "Active Decline",
+      text: `${
+        topActiveDecliningProducts[0].stockCode
+      } ${formatMoney(
+        topActiveDecliningProducts[0].salesChange
+      )} · ${
+        topActiveDecliningProducts[0].percentageChange !== null
+          ? `${topActiveDecliningProducts[0].percentageChange.toFixed(1)}%`
+          : "—"
+      }`,
+      type: "watch" as const,
+    }
+    : null,
+].filter(
+  (
+    priority
+  ): priority is NonNullable<typeof priority> =>
+    priority !== null
+);
   const fullYearSales =
     Array.from(
       { length: 5 },
@@ -2575,7 +2695,105 @@ if (!customer) {
   )}
 </Link>
         </div>
+{productView === "decline" && (
+  <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-5">
+    <p className="text-xs font-bold uppercase tracking-wide text-amber-700">
+      Odin Product Intelligence
+    </p>
 
+    <h3 className="mt-1 text-lg font-bold text-slate-950">
+      Product Recovery Opportunities
+    </h3>
+
+    <p className="mt-2 text-sm leading-6 text-slate-700">
+      {stoppedProductsCount > 0 ? (
+        <>
+          {customer.name} has stopped buying{" "}
+          <strong>
+            {stoppedProductsCount}{" "}
+            {stoppedProductsCount === 1
+              ? "product"
+              : "products"}
+          </strong>{" "}
+          that generated sales in {previousYear}.
+        </>
+      ) : (
+        <>
+          {customer.name} has no products that have completely
+          stopped this year, but several lines are performing below{" "}
+          {previousYear}.
+        </>
+      )}
+    </p>
+
+    {topStoppedProducts.length > 0 && (
+      <div className="mt-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Largest Products Stopped
+        </p>
+
+        <div className="mt-2 flex flex-wrap gap-2">
+          {topStoppedProducts.map((product) => (
+            <span
+              key={product.stockCode}
+              className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm"
+            >
+              <strong className="text-slate-950">
+                {product.stockCode}
+              </strong>
+              <span className="ml-2 text-red-700">
+                -{formatMoney(product.previousSales)}
+              </span>
+            </span>
+          ))}
+        </div>
+      </div>
+    )}
+{topActiveDecliningProducts.length > 0 && (
+  <div className="mt-4">
+    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+      Still Buying But Declining
+    </p>
+
+    <div className="mt-2 flex flex-wrap gap-2">
+      {topActiveDecliningProducts.map((product) => (
+        <span
+          key={product.stockCode}
+          className="rounded-lg border border-red-200 bg-white px-3 py-2 text-sm"
+        >
+          <strong className="text-slate-950">
+            {product.stockCode}
+          </strong>
+
+          <span className="ml-2 text-red-700">
+            {formatMoney(product.salesChange)}
+          </span>
+
+          {product.percentageChange !== null && (
+            <span className="ml-1 text-xs text-slate-500">
+              ({product.percentageChange.toFixed(1)}%)
+            </span>
+          )}
+        </span>
+      ))}
+    </div>
+  </div>
+)}
+    {biggestDeclineProduct &&
+      biggestDeclineProduct.currentSales > 0 && (
+        <p className="mt-4 text-sm text-slate-700">
+          <strong>{biggestDeclineProduct.stockCode}</strong>{" "}
+          is still being purchased but is down{" "}
+          <strong className="text-red-700">
+            {formatMoney(
+              Math.abs(biggestDeclineProduct.salesChange)
+            )}
+          </strong>{" "}
+          versus {previousYear}.
+        </p>
+      )}
+  </div>
+)}
         <div className="mt-6 overflow-x-auto rounded-lg border">
           <table className="min-w-full text-sm">
             <thead className="bg-slate-50">
@@ -2936,7 +3154,44 @@ if (!customer) {
                 customer&apos;s current performance.
               </p>
             </div>
+{meetingPriorities.length > 0 && (
+  <div className="mt-5">
+    <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+      Meeting Priorities
+    </p>
 
+    <div className="mt-2 grid gap-3 md:grid-cols-3">
+      {meetingPriorities.map((priority, index) => (
+        <div
+          key={`${priority.title}-${index}`}
+          className={`rounded-lg border p-4 ${
+            priority.type === "opportunity"
+              ? "border-amber-200 bg-amber-50"
+              : "border-red-200 bg-red-50"
+          }`}
+        >
+          <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+            Priority {index + 1}
+          </p>
+
+          <p
+            className={`mt-1 font-bold ${
+              priority.type === "opportunity"
+                ? "text-amber-800"
+                : "text-red-800"
+            }`}
+          >
+            {priority.title}
+          </p>
+
+          <p className="mt-1 text-sm font-semibold text-slate-700">
+            {priority.text}
+          </p>
+        </div>
+      ))}
+    </div>
+  </div>
+)}
             <div className="mt-5 grid gap-4 lg:grid-cols-2">
               {odinTalkingPoints.map(
                 (point, index) => (

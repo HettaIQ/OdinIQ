@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+
 import * as XLSX from "xlsx";
 
 import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
@@ -89,6 +90,7 @@ export async function POST(
      * READ ODINIQ SESSION METADATA
      * ----------------------------------------
      */
+
     const metadataSheet =
       workbook.Sheets["_OdinIQ"];
 
@@ -174,6 +176,7 @@ export async function POST(
      * LOAD FROZEN STOCKTAKE SESSION
      * ----------------------------------------
      */
+
     const session =
       await prisma.stocktakeSession.findFirst({
         where: {
@@ -189,6 +192,8 @@ export async function POST(
           lines: {
             select: {
               id: true,
+              productId: true,
+              locationId: true,
 
               product: {
                 select: {
@@ -249,6 +254,7 @@ export async function POST(
      * FIND BLIND STOCKTAKE SHEET
      * ----------------------------------------
      */
+
     const stocktakeSheetName =
       workbook.SheetNames.find(
         (name) =>
@@ -340,6 +346,7 @@ export async function POST(
      * Location combinations frozen into
      * this stocktake.
      */
+
     const lineByKey =
       new Map(
         session.lines.map((line) => [
@@ -360,11 +367,68 @@ export async function POST(
       new Map<
         string,
         {
-          lineId: number;
+          lineId: number | null;
+          productId: number;
+          locationId: number;
           physicalCount: number;
           notes: string | null;
+          isNewAllocation: boolean;
         }
       >();
+
+    /*
+     * Load live products and active
+     * warehouse locations.
+     *
+     * These allow a valid product to be
+     * counted in a different warehouse
+     * location from the original snapshot.
+     */
+
+    const liveProducts =
+      await prisma.product.findMany({
+        where: {
+          companyId,
+        },
+
+        select: {
+          id: true,
+          productCode: true,
+        },
+      });
+
+    const productByCode =
+      new Map(
+        liveProducts.map((product) => [
+          product.productCode
+            .trim()
+            .toUpperCase(),
+          product,
+        ])
+      );
+
+    const liveLocations =
+      await prisma.warehouseLocation.findMany({
+        where: {
+          companyId,
+          active: true,
+        },
+
+        select: {
+          id: true,
+          code: true,
+        },
+      });
+
+    const locationByCode =
+      new Map(
+        liveLocations.map((location) => [
+          location.code
+            .trim()
+            .toUpperCase(),
+          location,
+        ])
+      );
 
     const problems: string[] = [];
 
@@ -407,6 +471,7 @@ export async function POST(
        * empty warehouse locations and do
        * not require a physical quantity.
        */
+
       if (!productCode) {
         continue;
       }
@@ -417,12 +482,35 @@ export async function POST(
       const snapshotLine =
         lineByKey.get(key);
 
-      if (!snapshotLine) {
-        problems.push(
-          `Row ${rowNumber}: ${productCode} at ${location || "no location"} was not part of the original stocktake.`
-        );
+      /*
+       * If this exact Product + Location
+       * combination was not in the frozen
+       * snapshot, validate both parts
+       * against the live Odin database.
+       */
 
-        continue;
+      const liveProduct =
+        productByCode.get(productCode);
+
+      const liveLocation =
+        locationByCode.get(location);
+
+      if (!snapshotLine) {
+        if (!liveProduct) {
+          problems.push(
+            `Row ${rowNumber}: ${productCode} is not a valid Odin product.`
+          );
+
+          continue;
+        }
+
+        if (!liveLocation) {
+          problems.push(
+            `Row ${rowNumber}: ${location || "no location"} is not a valid active warehouse location.`
+          );
+
+          continue;
+        }
       }
 
       if (counts.has(key)) {
@@ -471,19 +559,31 @@ export async function POST(
 
       counts.set(key, {
         lineId:
-          snapshotLine.id,
+          snapshotLine?.id ?? null,
+
+        productId:
+          snapshotLine?.productId ??
+          liveProduct!.id,
+
+        locationId:
+          snapshotLine?.locationId ??
+          liveLocation!.id,
 
         physicalCount,
 
         notes:
           notes || null,
+
+        isNewAllocation:
+          !snapshotLine,
       });
     }
 
     /*
      * Every frozen stocktake line must
-     * appear exactly once with a count.
+     * still appear exactly once.
      */
+
     for (const [
       key,
       line,
@@ -523,12 +623,15 @@ export async function POST(
      * FINALISE ATOMICALLY
      * ----------------------------------------
      *
-     * Re-check the session inside the
-     * transaction. This protects against
-     * accidental double-finalisation.
+     * Existing frozen lines are updated.
+     * New valid Product + Location pairs
+     * are added to the same stocktake
+     * session for a complete audit trail.
      *
-     * Product.stockQuantity is NOT changed.
+     * Product.stockQuantity is NOT changed
+     * at this stage.
      */
+
     const completedAt =
       new Date();
 
@@ -556,23 +659,63 @@ export async function POST(
           );
         }
 
-        for (const count of counts.values()) {
-          await tx.stocktakeLine.update({
-            where: {
-              id: count.lineId,
-            },
+        for (
+          const count of
+            counts.values()
+        ) {
+          if (count.lineId !== null) {
+            await tx.stocktakeLine.update({
+              where: {
+                id: count.lineId,
+              },
 
-            data: {
-              physicalCount:
-                count.physicalCount,
+              data: {
+                physicalCount:
+                  count.physicalCount,
 
-              notes:
-                count.notes,
+                notes:
+                  count.notes,
 
-              countedAt:
-                completedAt,
-            },
-          });
+                countedAt:
+                  completedAt,
+              },
+            });
+          } else {
+            await tx.stocktakeLine.create({
+              data: {
+                companyId,
+
+                stocktakeSessionId:
+                  session.id,
+
+                productId:
+                  count.productId,
+
+                locationId:
+                  count.locationId,
+
+                /*
+                 * This Product + Location
+                 * pair was not present in
+                 * the frozen snapshot.
+                 */
+                expectedSystemQuantity:
+                  null,
+
+                expectedLocationQuantity:
+                  0,
+
+                physicalCount:
+                  count.physicalCount,
+
+                notes:
+                  count.notes,
+
+                countedAt:
+                  completedAt,
+              },
+            });
+          }
         }
 
         await tx.stocktakeSession.update({

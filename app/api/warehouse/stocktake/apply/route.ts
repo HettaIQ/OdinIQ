@@ -61,8 +61,9 @@ export async function POST(
                 true,
 
               physicalCount: true,
+notes: true,
 
-              product: {
+product: {
                 select: {
                   productCode: true,
                   description: true,
@@ -153,23 +154,32 @@ export async function POST(
      * B04 = 30
      * New Product.stockQuantity = 80
      */
-    const productTotals =
-      new Map<number, number>();
+   const productTotals =
+  new Map<number, number>();
 
-    for (const line of session.lines) {
-      const physicalCount =
-        line.physicalCount as number;
+for (const line of session.lines) {
+  const removeFromList =
+    String(line.notes ?? "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ") ===
+    "remove from list";
 
-      const existing =
-        productTotals.get(
-          line.productId
-        ) ?? 0;
+  const effectivePhysicalCount =
+    removeFromList
+      ? 0
+      : (line.physicalCount as number);
 
-      productTotals.set(
-        line.productId,
-        existing + physicalCount
-      );
-    }
+  const existing =
+    productTotals.get(
+      line.productId
+    ) ?? 0;
+
+  productTotals.set(
+    line.productId,
+    existing + effectivePhysicalCount
+  );
+}
 
     const now = new Date();
 
@@ -186,33 +196,52 @@ export async function POST(
          * location to its physical count.
          */
         for (const line of session.lines) {
-          await tx.productStockLocation.upsert({
-            where: {
-              companyId_productId_locationId: {
-                companyId,
-                productId:
-                  line.productId,
-                locationId:
-                  line.locationId,
-              },
-            },
+  const removeFromList =
+    String(line.notes ?? "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ") ===
+    "remove from list";
 
-            update: {
-              quantity:
-                line.physicalCount as number,
-            },
+  if (removeFromList) {
+    await tx.productStockLocation.deleteMany({
+      where: {
+        companyId,
+        productId:
+          line.productId,
+        locationId:
+          line.locationId,
+      },
+    });
+  } else {
+    await tx.productStockLocation.upsert({
+      where: {
+        companyId_productId_locationId: {
+          companyId,
+          productId:
+            line.productId,
+          locationId:
+            line.locationId,
+        },
+      },
 
-            create: {
-              companyId,
-              productId:
-                line.productId,
-              locationId:
-                line.locationId,
-              quantity:
-                line.physicalCount as number,
-            },
-          });
-        }
+      update: {
+        quantity:
+          line.physicalCount as number,
+      },
+
+      create: {
+        companyId,
+        productId:
+          line.productId,
+        locationId:
+          line.locationId,
+        quantity:
+          line.physicalCount as number,
+      },
+    });
+  }
+}
 
         /*
          * Update Odin's overall System Stock
