@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import Link from "next/link";
@@ -211,21 +211,21 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-[#080808] text-white">
       <nav className="border-b border-white/10">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-6 lg:px-8">
+        <div className="mx-auto flex max-w-[1500px] items-center justify-between px-6 py-6 lg:px-8">
           <Link
             href="/"
-            className="flex items-center gap-4 text-white no-underline"
+            className="flex items-center gap-5 text-white no-underline"
           >
-            <div className="flex h-14 w-14 items-center justify-center rounded-full border border-[#d4af37] text-lg font-bold text-[#d4af37]">
+            <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full border border-[#d4af37] text-2xl font-bold text-[#d4af37]">
               O
             </div>
 
             <div>
-              <div className="text-3xl font-bold tracking-wide leading-none">
+              <div className="text-4xl font-bold tracking-wide leading-none">
                 <span className="text-white">Odin</span>
                 <span className="text-[#d4af37]">IQ</span>
               </div>
-              <div className="mt-1.5 text-[11px] uppercase tracking-[0.28em] text-white/40">
+              <div className="mt-2 text-xs uppercase tracking-[0.22em] text-white/65">
                 Commercial Intelligence
               </div>
             </div>
@@ -252,7 +252,7 @@ export default function Home() {
       <section className="relative overflow-hidden">
         <div className="absolute left-1/2 top-0 h-[500px] w-[900px] -translate-x-1/2 rounded-full bg-[#d4af37]/5 blur-3xl" />
 
-        <div className="relative mx-auto grid max-w-7xl gap-16 px-6 pb-24 pt-20 lg:grid-cols-[1.15fr_0.85fr] lg:px-8 lg:pb-32 lg:pt-28">
+        <div className="relative mx-auto grid max-w-[1500px] gap-16 px-6 pb-24 pt-20 lg:grid-cols-[1.15fr_0.85fr] lg:px-8 lg:pb-32 lg:pt-28">
           <div>
             <p className="text-sm font-bold uppercase tracking-[0.28em] text-[#d4af37]">
               Business intelligence that leads to action
@@ -298,10 +298,10 @@ export default function Home() {
             </p>
           </div>
 
-          <div className="self-center rounded-[28px] border border-white/10 bg-[#111111] p-5 shadow-2xl shadow-black/40 sm:p-7">
+          <div className="self-center rounded-[28px] border border-[#d4af37]/25 bg-[#12110e] p-5 shadow-2xl shadow-black/40 sm:p-7">
             <div className="flex items-center justify-between border-b border-white/10 pb-5">
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.2em] text-white/35">
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-white/55">
                   Odin Intelligence
                 </p>
                 <h2 className="mt-2 text-xl font-bold">
@@ -432,7 +432,7 @@ export default function Home() {
                                   : "border-white/10 text-white/30 group-hover:border-[#d4af37]/50 group-hover:text-[#d4af37]"
                               }`}
                             >
-                              {selected ? "−" : "+"}
+                              {selected ? "âˆ’" : "+"}
                             </span>
                           </div>
 
@@ -474,7 +474,7 @@ export default function Home() {
                         </div>
 
                         <div className="p-8 lg:p-10">
-                          <p className="text-xs font-bold uppercase tracking-[0.2em] text-white/35">
+                          <p className="text-xs font-bold uppercase tracking-[0.2em] text-white/55">
                             What this can include
                           </p>
 
@@ -592,7 +592,7 @@ export default function Home() {
           <div className="mx-auto mt-12 max-w-5xl rounded-[30px] border border-white/10 bg-[#111111] p-6 sm:p-8">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {[
-                ["Revenue", "£2.84m"],
+                ["Revenue", "Â£2.84m"],
                 ["Customers", "428"],
                 ["Opportunities", "31"],
                 ["Signals", "8"],
@@ -711,7 +711,7 @@ export default function Home() {
 
       <footer className="border-t border-white/10">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-8 text-sm text-white/35 sm:flex-row sm:items-center sm:justify-between lg:px-8">
-          <span>© 2026 OdinIQ</span>
+          <span>Â© 2026 OdinIQ</span>
 
           <div className="flex gap-6">
             <Link
@@ -728,3 +728,7 @@ export default function Home() {
     </main>
   );
 }
+
+
+
+
