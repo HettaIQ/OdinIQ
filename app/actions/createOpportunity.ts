@@ -41,28 +41,15 @@ function parseOptionalMembershipId(
   return id;
 }
 
-export async function updateOpportunity(
-  opportunityId: number,
+export async function createOpportunity(
   formData: FormData
 ) {
   const { companyId } =
     await requireCompanyWriteContext();
 
-  const existingOpportunity =
-    await prisma.commercialOpportunity.findFirst({
-      where: {
-        id: opportunityId,
-        companyId,
-      },
-      select: {
-        id: true,
-        customerId: true,
-      },
-    });
-
-  if (!existingOpportunity) {
-    throw new Error("Opportunity not found.");
-  }
+  const customerId = Number(
+    formData.get("customerId")
+  );
 
   const title = String(
     formData.get("title") ?? ""
@@ -73,13 +60,13 @@ export async function updateOpportunity(
   ).trim();
 
   const stage = String(
-    formData.get("stage") ?? ""
+    formData.get("stage") ?? "QUALIFY"
   )
     .trim()
     .toUpperCase();
 
   const status = String(
-    formData.get("status") ?? ""
+    formData.get("status") ?? "OPEN"
   )
     .trim()
     .toUpperCase();
@@ -94,6 +81,10 @@ export async function updateOpportunity(
 
   const rawExpectedCloseDate = String(
     formData.get("expectedCloseDate") ?? ""
+  ).trim();
+
+  const source = String(
+    formData.get("source") ?? ""
   ).trim();
 
   const ownerMembershipId =
@@ -111,6 +102,15 @@ export async function updateOpportunity(
       formData.get("quoterMembershipId")
     );
 
+  if (
+    !Number.isInteger(customerId) ||
+    customerId <= 0
+  ) {
+    throw new Error(
+      "A customer must be selected."
+    );
+  }
+
   if (!title) {
     throw new Error(
       "Opportunity title is required."
@@ -126,6 +126,23 @@ export async function updateOpportunity(
   if (!ALLOWED_STATUSES.has(status)) {
     throw new Error(
       "Invalid opportunity status."
+    );
+  }
+
+  const customer =
+    await prisma.customer.findFirst({
+      where: {
+        id: customerId,
+        companyId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+  if (!customer) {
+    throw new Error(
+      "Customer not found."
     );
   }
 
@@ -219,39 +236,35 @@ export async function updateOpportunity(
     }
   }
 
-  await prisma.commercialOpportunity.update({
-    where: {
-      id: existingOpportunity.id,
-    },
-
-    data: {
-      title,
-      description: description || null,
-      stage,
-      status,
-      value,
-      probability,
-      expectedCloseDate,
-      ownerMembershipId,
-      agentMembershipId,
-      quoterMembershipId,
-    },
-  });
+  const opportunity =
+    await prisma.commercialOpportunity.create({
+      data: {
+        companyId,
+        customerId: customer.id,
+        title,
+        description:
+          description || null,
+        stage,
+        status,
+        value,
+        probability,
+        expectedCloseDate,
+        source: source || "MANUAL",
+        ownerMembershipId,
+        agentMembershipId,
+        quoterMembershipId,
+      },
+      select: {
+        id: true,
+      },
+    });
 
   revalidatePath(
     "/commercial/opportunities"
   );
 
   revalidatePath(
-    `/commercial/opportunities/${opportunityId}`
-  );
-
-  revalidatePath(
-    `/commercial/opportunities/${opportunityId}/edit`
-  );
-
-  revalidatePath(
-    `/commercial/customers/${existingOpportunity.customerId}`
+    `/commercial/customers/${customer.id}`
   );
 
   revalidatePath(
@@ -259,6 +272,6 @@ export async function updateOpportunity(
   );
 
   redirect(
-    `/commercial/opportunities/${opportunityId}`
+    `/commercial/opportunities/${opportunity.id}`
   );
 }

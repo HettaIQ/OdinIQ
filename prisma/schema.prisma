@@ -41,6 +41,7 @@ model Company {
   stocktakeSessions       StocktakeSession[]
   stocktakeLines          StocktakeLine[]
   businessUnits           BusinessUnit[]
+  meetings                Meeting[]
 }
 
 model BusinessUnit {
@@ -154,6 +155,9 @@ model CompanyMembership {
   agentAliases            AgentAlias[]
   territoryAgentHistory   TerritoryAgentHistory[]
   branchAgentOverrides    CustomerBranch[]        @relation("CustomerBranchAgentOverride")
+  organisedMeetings       Meeting[]               @relation("MeetingOrganiser")
+  meetingAttendances      MeetingAttendee[]       @relation("MeetingAttendeeMembership")
+  meetingActions          MeetingAction[]         @relation("MeetingActionAssignee")
 
   @@unique([userId, companyId])
   @@index([companyId])
@@ -229,6 +233,7 @@ model Customer {
   aliases                 CustomerAccountAlias[]
   commercialAgreements    CommercialAgreement[]
   branches                CustomerBranch[]
+  meetings                Meeting[]
 
   @@unique([companyId, accountCode])
   @@index([companyId])
@@ -1267,4 +1272,148 @@ model StocktakeLine {
   @@index([stocktakeSessionId])
   @@index([productId])
   @@index([locationId])
+}
+
+model Meeting {
+  id Int @id @default(autoincrement())
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  customerId Int?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  organisedByMembershipId Int?
+  organisedByMembership   CompanyMembership? @relation("MeetingOrganiser", fields: [organisedByMembershipId], references: [id], onDelete: SetNull)
+
+  title       String
+  meetingType String?
+  location    String?
+
+  status String @default("PLANNED")
+
+  scheduledAt DateTime?
+  startedAt   DateTime?
+  endedAt     DateTime?
+
+  notes      String?
+  transcript String?
+
+  aiSummary       String?
+  aiDecisions     String?
+  aiOpportunities String?
+  aiRisks         String?
+  aiFollowUp      String?
+
+  attendees MeetingAttendee[]
+  actions   MeetingAction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([customerId])
+  @@index([organisedByMembershipId])
+  @@index([companyId, scheduledAt])
+  @@index([companyId, status])
+}
+
+model MeetingAttendee {
+  id Int @id @default(autoincrement())
+
+  meetingId Int
+  meeting   Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  membershipId Int?
+  membership   CompanyMembership? @relation("MeetingAttendeeMembership", fields: [membershipId], references: [id], onDelete: SetNull)
+
+  name  String
+  email String?
+  role  String?
+
+  internal Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([meetingId])
+  @@index([membershipId])
+}
+
+model MeetingAction {
+  id Int @id @default(autoincrement())
+
+  meetingId Int
+  meeting   Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  assignedMembershipId Int?
+  assignedMembership   CompanyMembership? @relation("MeetingActionAssignee", fields: [assignedMembershipId], references: [id], onDelete: SetNull)
+
+  description String
+
+  status   String @default("OPEN")
+  priority String @default("NORMAL")
+
+  dueDate     DateTime?
+  completedAt DateTime?
+
+  aiGenerated Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([meetingId])
+  @@index([assignedMembershipId])
+  @@index([status])
+  @@index([dueDate])
+}
+
+
+model WebsiteEnquiry {
+  id Int @id @default(autoincrement())
+
+  companyName String
+  contactName String
+  email       String
+  telephone   String?
+  requirements String?
+
+  packageName       String
+  totalUsers        Int
+  includedUsers     Int
+  additionalUsers   Int
+  userDiscount      Int
+
+  selectedModules   String
+  includedModules   Int
+  additionalModules Int
+
+  status String @default("NEW")
+nextFollowUpAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  notes WebsiteEnquiryNote[]
+
+  @@index([status, createdAt])
+}
+
+
+model WebsiteEnquiryNote {
+  id        Int      @id @default(autoincrement())
+  enquiryId Int
+  note      String
+  createdAt DateTime @default(now())
+
+  enquiry WebsiteEnquiry @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+
+  @@index([enquiryId, createdAt])
+}
+
+
+model WebsiteEnquiryRateLimit {
+  id          Int      @id @default(autoincrement())
+  identifier  String
+  createdAt   DateTime @default(now())
+
+  @@index([identifier, createdAt])
 }

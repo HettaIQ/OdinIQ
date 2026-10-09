@@ -1,8 +1,9 @@
-﻿"use client";
+"use client";
 
 import { useState } from "react";
 import Link from "next/link";
 import { enterDemo } from "@/app/demo/actions";
+import OdinPackageBuilder from "@/components/licensing/OdinPackageBuilder";
 
 const services = [
   {
@@ -373,12 +374,12 @@ export default function Home() {
             <h2 className="mt-5 text-4xl font-bold tracking-[-0.03em] sm:text-5xl">
               One platform.
               <br />
-              The services you need.
+              Your business. Your modules.
             </h2>
 
             <p className="mt-6 text-lg leading-8 text-white/55">
               OdinIQ is designed as a modular commercial
-              platform. Start with the areas that matter most to
+              platform. Choose the modules that matter most to
               your business and add more capability as your
               requirements develop.
             </p>
@@ -432,7 +433,7 @@ export default function Home() {
                                   : "border-white/10 text-white/30 group-hover:border-[#d4af37]/50 group-hover:text-[#d4af37]"
                               }`}
                             >
-                              {selected ? "âˆ’" : "+"}
+                              {selected ? "-" : "+"}
                             </span>
                           </div>
 
@@ -457,7 +458,7 @@ export default function Home() {
                       <div className="grid gap-0 lg:grid-cols-[0.8fr_1.2fr]">
                         <div className="border-b border-white/10 p-8 lg:border-b-0 lg:border-r lg:p-10">
                           <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#d4af37]">
-                            Service {activeService.number}
+                            Module {activeService.number}
                           </p>
 
                           <h3 className="mt-5 text-3xl font-bold tracking-[-0.02em]">
@@ -469,7 +470,7 @@ export default function Home() {
                           </p>
 
                           <div className="mt-8 inline-flex items-center gap-2 rounded-full border border-[#d4af37]/20 bg-[#d4af37]/5 px-4 py-2 text-xs font-semibold text-[#d4af37]">
-                            Available as part of your OdinIQ configuration
+                            Available individually or as part of a package
                           </div>
                         </div>
 
@@ -501,6 +502,8 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+  <OdinPackageBuilder />
 
       <section className="mx-auto grid max-w-7xl gap-14 px-6 py-24 lg:grid-cols-2 lg:px-8 lg:py-32">
         <div>
@@ -592,7 +595,7 @@ export default function Home() {
           <div className="mx-auto mt-12 max-w-5xl rounded-[30px] border border-white/10 bg-[#111111] p-6 sm:p-8">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {[
-                ["Revenue", "Â£2.84m"],
+                ["Revenue", "\u00A32.84m"],
                 ["Customers", "428"],
                 ["Opportunities", "31"],
                 ["Signals", "8"],
@@ -711,7 +714,7 @@ export default function Home() {
 
       <footer className="border-t border-white/10">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-8 text-sm text-white/35 sm:flex-row sm:items-center sm:justify-between lg:px-8">
-          <span>Â© 2026 OdinIQ</span>
+          <span>{String.fromCharCode(169)} 2026 OdinIQ</span>
 
           <div className="flex gap-6">
             <Link
@@ -728,6 +731,8 @@ export default function Home() {
     </main>
   );
 }
+
+
 
 
 

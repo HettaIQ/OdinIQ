@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
 
+import { redirect } from "next/navigation";
 import { requireAuth } from "./requireAuth";
 
 export async function requireSuperAdmin() {
