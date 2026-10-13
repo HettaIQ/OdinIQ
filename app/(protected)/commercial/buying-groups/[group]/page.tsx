@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { requireCompanyContext } from "@/lib/auth/requireCompanyContext";
 import { prisma } from "@/lib/prisma";
 import BuyingGroupMemberTable from "./BuyingGroupMemberTable";
+import MlcpExpandableSection from "./MlcpExpandableSection";
 
 
 const NON_PRODUCT_CODES = new Set([
@@ -323,13 +324,14 @@ const search = (filters.search ?? "").trim().toLowerCase();
   } = await requireCompanyContext();
 
   const customers = await prisma.customer.findMany({
-    where: {
-      companyId,
-      buyingGroup,
-    },
-    orderBy: {
-      name: "asc",
-    },
+     where: {
+    companyId,
+    buyingGroup,
+    status: "ACTIVE",
+  },
+  orderBy: {
+    name: "asc",
+  },
     select: {
       id: true,
       name: true,
@@ -343,6 +345,8 @@ const search = (filters.search ?? "").trim().toLowerCase();
 },
     },
   });
+
+  
 
 const invoices = await prisma.salesInvoice.findMany({
   where: {
@@ -521,11 +525,12 @@ const customerInvoices = invoices.filter((invoice) => {
   );
 
   const totalPreviousYear = rows.reduce(
-    (sum, row) => sum + row.previousYearSales,
-    0
-  );
+  (sum, row) => sum + row.previousYearSales,
+  0
+);
 
-  const totalMovement =
+
+const totalMovement =
     totalCurrentYear - totalPreviousYear;
 
   const totalMovementPercent =
@@ -687,6 +692,14 @@ function getNbgProduct(
   return created;
 }
 
+const nbgCustomerProductSales = new Map<
+  string,
+  {
+    current: Map<string, number>;
+    previous: Map<string, number>;
+  }
+>();
+
 for (const line of salesLines) {
   const invoice = line.salesInvoice;
 
@@ -777,59 +790,83 @@ if (
     line.description ?? code
   );
 
-  if (
-    invoice.invoiceDate >=
-      startOfCurrentYear &&
-    invoice.invoiceDate <= now
-  ) {
-    product.currentSales += sales;
-    product.currentQuantity += quantity;
-   if (!isCredit && rawQuantity > 0) {
-  product.currentBuyers.add(buyerKey);
-}
-   
-    if (
-      !isCredit &&
-      rawQuantity > 0 &&
-      (
-        !product.lastSold ||
-        invoice.invoiceDate >
-          product.lastSold
-      )
-    ) {
-      product.lastSold =
-        invoice.invoiceDate;
-    }
-  }
+ const customerProductSales =
+  nbgCustomerProductSales.get(buyerKey) ?? {
+    current: new Map<string, number>(),
+    previous: new Map<string, number>(),
+  };
 
-  if (
-    invoice.invoiceDate >=
-      startOfPreviousYear &&
-    invoice.invoiceDate <=
-      comparisonEndLastYear
-  ) {
-    product.previousSales += sales;
-    product.previousQuantity += quantity;
+
+if (
+  invoice.invoiceDate >= startOfCurrentYear &&
+  invoice.invoiceDate <= now
+) {
+  product.currentSales += sales;
+  product.currentQuantity += quantity;
+
+  customerProductSales.current.set(
+    code,
+    (customerProductSales.current.get(code) ?? 0) + sales
+  );
+
+  nbgCustomerProductSales.set(
+    buyerKey,
+    customerProductSales
+  );
+
+  if (!isCredit && rawQuantity > 0) {
+    product.currentBuyers.add(buyerKey);
+  }
+}
+
+if (
+  !isCredit &&
+  rawQuantity > 0 &&
+  (
+    !product.lastSold ||
+    invoice.invoiceDate > product.lastSold
+  )
+) {
+  product.lastSold = invoice.invoiceDate;
+}
+
+if (
+  invoice.invoiceDate >= startOfPreviousYear &&
+  invoice.invoiceDate <= comparisonEndLastYear
+) {
+  product.previousSales += sales;
+  product.previousQuantity += quantity;
+
+  customerProductSales.previous.set(
+    code,
+    (customerProductSales.previous.get(code) ?? 0) + sales
+  );
+
+  nbgCustomerProductSales.set(
+    buyerKey,
+    customerProductSales
+  );
+
+  if (!isCredit && rawQuantity > 0) {
     product.previousBuyers.add(buyerKey);
   }
 }
 
-const productAliases =
-  await prisma.productAlias.findMany({
-    where: {
-      companyId,
-    },
-
-    select: {
-      aliasCode: true,
-
-      product: {
-        select: {
-          productCode: true,
-        },
+} // closes for (const line of salesLines)
+ 
+const productAliases = await prisma.productAlias.findMany({
+  where: {
+    companyId,
+  },
+  select: {
+    aliasCode: true,
+    product: {
+      select: {
+        productCode: true,
       },
     },
-  });
+  },
+});
 
 for (const alias of productAliases) {
   const aliasCode =
@@ -898,7 +935,53 @@ for (const buyer of aliasProduct.previousBuyers) {
 
   nbgProductMap.delete(aliasCode);
 }
+// Merge product aliases into canonical product codes
+// for customer-level product sales as well.
+for (const alias of productAliases) {
+  const aliasCode =
+    normaliseProductCode(alias.aliasCode);
 
+  const productCode =
+    normaliseProductCode(
+      alias.product.productCode
+    );
+
+  if (
+    !aliasCode ||
+    !productCode ||
+    aliasCode === productCode
+  ) {
+    continue;
+  }
+
+  for (const customerSales of nbgCustomerProductSales.values()) {
+    const aliasCurrentSales =
+      customerSales.current.get(aliasCode) ?? 0;
+
+    if (aliasCurrentSales !== 0) {
+      customerSales.current.set(
+        productCode,
+        (customerSales.current.get(productCode) ?? 0) +
+          aliasCurrentSales
+      );
+
+      customerSales.current.delete(aliasCode);
+    }
+
+    const aliasPreviousSales =
+      customerSales.previous.get(aliasCode) ?? 0;
+
+    if (aliasPreviousSales !== 0) {
+      customerSales.previous.set(
+        productCode,
+        (customerSales.previous.get(productCode) ?? 0) +
+          aliasPreviousSales
+      );
+
+      customerSales.previous.delete(aliasCode);
+    }
+  }
+}
 const nbgProductPerformance =
   [...nbgProductMap.values()]
     .map((product) => {
@@ -1039,6 +1122,123 @@ for (const product of products) {
       group.currentSales !== 0 ||
       group.previousSales !== 0
   );
+
+const mlcpProducts =
+  nbgProductPerformance
+    .filter(
+      (product) =>
+        classifyProduct(
+          product.code,
+          product.description
+        ) === "MLCP"
+    )
+    .sort(
+      (a, b) =>
+        b.currentSales - a.currentSales
+    );
+
+
+const mlcpPreInsulatedProducts =
+  mlcpProducts.filter((product) =>
+    normaliseProductCode(product.code).startsWith("HSINS")
+  );
+
+const mlcpFittingProducts =
+  mlcpProducts.filter(
+    (product) =>
+      !normaliseProductCode(product.code).startsWith("HSINS")
+  );
+const mlcpPreInsulatedCurrentSales =
+  mlcpPreInsulatedProducts.reduce(
+    (total, product) => total + product.currentSales,
+    0
+  );
+
+const mlcpPreInsulatedPreviousSales =
+  mlcpPreInsulatedProducts.reduce(
+    (total, product) => total + product.previousSales,
+    0
+  );
+
+const mlcpFittingsCurrentSales =
+  mlcpFittingProducts.reduce(
+    (total, product) => total + product.currentSales,
+    0
+  );
+
+const mlcpFittingsPreviousSales =
+  mlcpFittingProducts.reduce(
+    (total, product) => total + product.previousSales,
+    0
+  );
+ const mlcpPreInsulatedDifference =
+  mlcpPreInsulatedCurrentSales -
+  mlcpPreInsulatedPreviousSales;
+
+const mlcpPreInsulatedPercentage =
+  mlcpPreInsulatedPreviousSales !== 0
+    ? (mlcpPreInsulatedDifference /
+        Math.abs(mlcpPreInsulatedPreviousSales)) *
+      100
+    : mlcpPreInsulatedCurrentSales > 0
+      ? 100
+      : 0;
+
+const mlcpFittingsDifference =
+  mlcpFittingsCurrentSales -
+  mlcpFittingsPreviousSales;
+
+const mlcpFittingsPercentage =
+  mlcpFittingsPreviousSales !== 0
+    ? (mlcpFittingsDifference /
+        Math.abs(mlcpFittingsPreviousSales)) *
+      100
+    : mlcpFittingsCurrentSales > 0
+      ? 100
+      : 0;
+
+const topMlcpProducts =
+  [...mlcpProducts]
+    .filter((product) => product.currentSales > 0)
+    .sort(
+      (a, b) =>
+        b.currentSales - a.currentSales
+    )
+    .slice(0, 5);
+
+const growingMlcpProducts =
+  [...mlcpProducts]
+    .map((product) => ({
+      ...product,
+      salesDifference:
+        product.currentSales - product.previousSales,
+    }))
+    .filter(
+      (product) => product.salesDifference > 0
+    )
+    .sort(
+      (a, b) =>
+        b.salesDifference - a.salesDifference
+    )
+    .slice(0, 5);
+
+const decliningMlcpProducts =
+  [...mlcpProducts]
+    .map((product) => ({
+      ...product,
+      salesDifference:
+        product.currentSales - product.previousSales,
+    }))
+    .filter(
+      (product) => product.salesDifference < 0
+    )
+    .sort(
+      (a, b) =>
+        a.salesDifference - b.salesDifference
+    )
+    .slice(0, 5);
+
+
 const mlcpGroup =
   nbgProductGroupPerformance.find(
     (group) => group.group === "MLCP"
@@ -1080,6 +1280,15 @@ const mlcpOpportunityRows =
       (a, b) =>
         b.currentYearSales - a.currentYearSales
     );
+const mlcpActiveOpportunityRows =
+  mlcpOpportunityRows.filter(
+    (row) => row.currentYearSales > 0
+  );
+
+const mlcpDormantOpportunityRows =
+  mlcpOpportunityRows.filter(
+    (row) => row.currentYearSales <= 0
+  );
 
 const mlcpCrossSellRows =
   mlcpOpportunityRows.filter(
@@ -1087,41 +1296,696 @@ const mlcpCrossSellRows =
       !mlcpPreviousBuyers.has(String(row.id))
   );
 
+const getCustomerMlcpSales = (
+  customerId: string,
+  period: "current" | "previous"
+) => {
+  const customerProductSales =
+    nbgCustomerProductSales.get(customerId);
+
+  return mlcpProducts.reduce(
+    (total, product) =>
+      total +
+      (customerProductSales?.[period].get(
+        normaliseProductCode(product.code)
+      ) ?? 0),
+    0
+  );
+};
+
 const mlcpCurrentBuyerRows =
   rows
     .filter((row) =>
       mlcpCurrentBuyers.has(String(row.id))
     )
-    .sort(
-      (a, b) =>
-        b.currentYearSales - a.currentYearSales
-    );
+    .map((row) => ({
+      ...row,
+      mlcpSales: getCustomerMlcpSales(
+        String(row.id),
+        "current"
+      ),
+    }))
+    .sort((a, b) => b.mlcpSales - a.mlcpSales);
 
-   const mlcpNewBuyerRows =
+const mlcpNewBuyerRows =
   rows
     .filter((row) =>
       mlcpNewBuyers.includes(String(row.id))
     )
-    .sort(
-      (a, b) =>
-        b.currentYearSales - a.currentYearSales
-    );
+    .map((row) => ({
+      ...row,
+      mlcpSales: getCustomerMlcpSales(
+        String(row.id),
+        "current"
+      ),
+    }))
+    .sort((a, b) => b.mlcpSales - a.mlcpSales);
 
 const mlcpLapsedBuyerRows =
   rows
     .filter((row) =>
       mlcpLapsedBuyers.includes(String(row.id))
     )
-    .sort(
-      (a, b) =>
-        b.previousYearSales - a.previousYearSales
-    ); 
+    .map((row) => ({
+      ...row,
+      mlcpSales: getCustomerMlcpSales(
+        String(row.id),
+        "previous"
+      ),
+    }))
+    .sort((a, b) => b.mlcpSales - a.mlcpSales); 
+const mlcpCustomerGrowthDrivers =
+  rows
+    .map((row) => {
+      const customerProductSales =
+        nbgCustomerProductSales.get(String(row.id));
+
+      const currentMlcpSales =
+        mlcpProducts.reduce(
+          (total, product) =>
+            total +
+            (customerProductSales?.current.get(
+              normaliseProductCode(product.code)
+            ) ?? 0),
+          0
+        );
+
+      const previousMlcpSales =
+        mlcpProducts.reduce(
+          (total, product) =>
+            total +
+            (customerProductSales?.previous.get(
+              normaliseProductCode(product.code)
+            ) ?? 0),
+          0
+        );
+
+      return {
+        ...row,
+        currentMlcpSales,
+        previousMlcpSales,
+        mlcpGrowth:
+          currentMlcpSales - previousMlcpSales,
+      };
+    })
+    .filter((row) => row.mlcpGrowth > 0)
+    .sort((a, b) => b.mlcpGrowth - a.mlcpGrowth)
+    .slice(0, 5);
+
+
+const mlcpCustomerSalesReconciliation =
+  [...nbgCustomerProductSales.values()].reduce(
+    (grandTotal, customerSales) => {
+      const customerMlcpSales =
+        mlcpProducts.reduce(
+          (total, product) =>
+            total +
+            (customerSales.current.get(
+              normaliseProductCode(product.code)
+            ) ?? 0),
+          0
+        );
+
+      return grandTotal + customerMlcpSales;
+    },
+    0
+  );
+
+
+
 const mlcpPenetration =
   customers.length > 0
     ? (mlcpCurrentBuyers.size / customers.length) * 100
     : 0;
 
- 
+const floorSystemsGroup =
+  nbgProductGroupPerformance.find(
+    (group) => group.group === "FLOOR_SYSTEMS"
+  );
+
+
+ const floorSystemProducts =
+  nbgProductPerformance.filter(
+    (product) =>
+      classifyProduct(
+        product.code,
+        product.description
+      ) === "FLOOR_SYSTEMS"
+  );
+
+const floorSystemCustomerPerformance =
+  rows
+    .map((row) => {
+      const customerProductSales =
+        nbgCustomerProductSales.get(String(row.id));
+
+      const currentFloorSystemSales =
+        floorSystemProducts.reduce(
+          (total, product) =>
+            total +
+            (customerProductSales?.current.get(
+              normaliseProductCode(product.code)
+            ) ?? 0),
+          0
+        );
+
+      const previousFloorSystemSales =
+        floorSystemProducts.reduce(
+          (total, product) =>
+            total +
+            (customerProductSales?.previous.get(
+              normaliseProductCode(product.code)
+            ) ?? 0),
+          0
+        );
+
+      return {
+        ...row,
+        currentFloorSystemSales,
+        previousFloorSystemSales,
+        floorSystemMovement:
+          currentFloorSystemSales -
+          previousFloorSystemSales,
+      };
+    });
+
+const floorSystemDecliningCustomers =
+  floorSystemCustomerPerformance
+    .filter(
+      (row) => row.floorSystemMovement < 0
+    )
+    .sort(
+      (a, b) =>
+        a.floorSystemMovement -
+        b.floorSystemMovement
+    );
+
+const floorSystemGrowingCustomers =
+  floorSystemCustomerPerformance
+    .filter(
+      (row) => row.floorSystemMovement > 0
+    )
+    .sort(
+      (a, b) =>
+        b.floorSystemMovement -
+        a.floorSystemMovement
+    );
+
+const floorSystemStoppedCustomers =
+  floorSystemCustomerPerformance
+    .filter(
+      (row) =>
+        row.previousFloorSystemSales > 0 &&
+        row.currentFloorSystemSales === 0
+    )
+    .sort(
+      (a, b) =>
+        b.previousFloorSystemSales -
+        a.previousFloorSystemSales
+    );
+
+    const electricUfhGroup =
+  nbgProductGroupPerformance.find(
+    (group) => group.group === "ELECTRIC_UFH"
+  );
+
+const electricUfhProducts =
+  nbgProductPerformance.filter(
+    (product) =>
+      classifyProduct(
+        product.code,
+        product.description
+      ) === "ELECTRIC_UFH"
+  );
+
+const electricUfhCustomerPerformance =
+  rows.map((row) => {
+    const customerProductSales =
+      nbgCustomerProductSales.get(String(row.id));
+
+    const currentElectricUfhSales =
+      electricUfhProducts.reduce(
+        (total, product) =>
+          total +
+          (customerProductSales?.current.get(
+            normaliseProductCode(product.code)
+          ) ?? 0),
+        0
+      );
+
+    const previousElectricUfhSales =
+      electricUfhProducts.reduce(
+        (total, product) =>
+          total +
+          (customerProductSales?.previous.get(
+            normaliseProductCode(product.code)
+          ) ?? 0),
+        0
+      );
+
+    return {
+      ...row,
+      currentElectricUfhSales,
+      previousElectricUfhSales,
+      electricUfhMovement:
+        currentElectricUfhSales - previousElectricUfhSales,
+    };
+  });
+
+const electricUfhDecliningCustomers =
+  electricUfhCustomerPerformance
+    .filter((row) => row.electricUfhMovement < 0)
+    .sort(
+      (a, b) =>
+        a.electricUfhMovement - b.electricUfhMovement
+    );
+
+const electricUfhGrowingCustomers =
+  electricUfhCustomerPerformance
+    .filter((row) => row.electricUfhMovement > 0)
+    .sort(
+      (a, b) =>
+        b.electricUfhMovement - a.electricUfhMovement
+    );
+
+const electricUfhStoppedCustomers =
+  electricUfhCustomerPerformance
+    .filter(
+      (row) =>
+        row.previousElectricUfhSales > 0 &&
+        row.currentElectricUfhSales === 0
+    )
+    .sort(
+      (a, b) =>
+        b.previousElectricUfhSales -
+        a.previousElectricUfhSales
+    );
+   
+
+const accessoriesGroup =
+  nbgProductGroupPerformance.find(
+    (group) => group.group === "ACCESSORIES"
+  );
+
+const accessoryProducts =
+  nbgProductPerformance.filter(
+    (product) =>
+      classifyProduct(
+        product.code,
+        product.description
+      ) === "ACCESSORIES"
+  );
+
+const accessoryCustomerPerformance =
+  rows.map((row) => {
+    const customerProductSales =
+      nbgCustomerProductSales.get(String(row.id));
+
+    const currentAccessorySales =
+      accessoryProducts.reduce(
+        (total, product) =>
+          total +
+          (customerProductSales?.current.get(
+            normaliseProductCode(product.code)
+          ) ?? 0),
+        0
+      );
+
+    const previousAccessorySales =
+      accessoryProducts.reduce(
+        (total, product) =>
+          total +
+          (customerProductSales?.previous.get(
+            normaliseProductCode(product.code)
+          ) ?? 0),
+        0
+      );
+
+    return {
+      ...row,
+      currentAccessorySales,
+      previousAccessorySales,
+      accessoryMovement:
+        currentAccessorySales - previousAccessorySales,
+    };
+  });
+
+const accessoryDecliningCustomers =
+  accessoryCustomerPerformance
+    .filter((row) => row.accessoryMovement < 0)
+    .sort(
+      (a, b) =>
+        a.accessoryMovement - b.accessoryMovement
+    );
+
+const accessoryGrowingCustomers =
+  accessoryCustomerPerformance
+    .filter((row) => row.accessoryMovement > 0)
+    .sort(
+      (a, b) =>
+        b.accessoryMovement - a.accessoryMovement
+    );
+
+const accessoryStoppedCustomers =
+  accessoryCustomerPerformance
+    .filter(
+      (row) =>
+        row.previousAccessorySales > 0 &&
+        row.currentAccessorySales === 0
+    )
+    .sort(
+      (a, b) =>
+        b.previousAccessorySales -
+        a.previousAccessorySales
+    );
+
+// NBG Meeting Brief
+const meetingBriefGrowthCustomers = [...rows]
+  .filter((row) => row.movementValue > 0)
+  .sort((a, b) => b.movementValue - a.movementValue)
+  .slice(0, 5);
+
+const meetingBriefDecliningCustomers = [...rows]
+  .filter((row) => row.movementValue < 0)
+  .sort((a, b) => a.movementValue - b.movementValue)
+  .slice(0, 5);
+
+const meetingBriefStoppedCustomers = [...rows]
+  .filter(
+    (row) =>
+      row.previousYearSales > 0 &&
+      row.currentYearSales === 0
+  )
+  .sort(
+    (a, b) =>
+      b.previousYearSales - a.previousYearSales
+  );
+
+const meetingBriefActiveCustomers = rows.filter(
+  (row) => row.currentYearSales > 0
+).length;
+
+const meetingBriefNoSalesCustomers = rows.filter(
+  (row) => row.currentYearSales === 0
+).length;
+
+const meetingBriefGrowthValue =
+  meetingBriefGrowthCustomers.reduce(
+    (total, row) => total + row.movementValue,
+    0
+  );
+
+const meetingBriefDeclineValue =
+  meetingBriefDecliningCustomers.reduce(
+    (total, row) => total + row.movementValue,
+    0
+  );
+
+const meetingBriefStoppedValue =
+  meetingBriefStoppedCustomers.reduce(
+    (total, row) => total + row.previousYearSales,
+    0
+  );
+const meetingBriefMovement =
+  totalCurrentYear - totalPreviousYear;
+
+const meetingBriefMovementPercentage =
+  totalPreviousYear !== 0
+    ? (meetingBriefMovement /
+        Math.abs(totalPreviousYear)) *
+      100
+    : totalCurrentYear > 0
+      ? 100
+      : 0;
+
+const meetingBriefTopGrowthCustomer =
+  meetingBriefGrowthCustomers[0] ?? null;
+
+const meetingBriefTopDecliningCustomer =
+  meetingBriefDecliningCustomers[0] ?? null;
+
+const meetingBriefLargestStoppedCustomer =
+  meetingBriefStoppedCustomers[0] ?? null;
+const meetingBriefCategories =
+  nbgProductGroupPerformance.filter(
+    (category) => category.group !== "OTHER"
+  );
+
+const meetingBriefStrongestCategory =
+  [...meetingBriefCategories]
+    .filter((category) => category.difference > 0)
+    .sort(
+      (a, b) => b.difference - a.difference
+    )[0] ?? null;
+
+const meetingBriefWeakestCategory =
+  [...meetingBriefCategories]
+    .filter((category) => category.difference < 0)
+    .sort(
+      (a, b) => a.difference - b.difference
+    )[0] ?? null;
+
+    const pipeGroup =
+  nbgProductGroupPerformance.find(
+    (group) => group.group === "PIPE"
+  );
+
+const pipeProducts =
+  nbgProductPerformance.filter(
+    (product) =>
+      classifyProduct(
+        product.code,
+        product.description
+      ) === "PIPE"
+  );
+
+const pipeCustomerPerformance =
+  rows.map((row) => {
+    const customerProductSales =
+      nbgCustomerProductSales.get(String(row.id));
+
+    const currentPipeSales =
+      pipeProducts.reduce(
+        (total, product) =>
+          total +
+          (customerProductSales?.current.get(
+            normaliseProductCode(product.code)
+          ) ?? 0),
+        0
+      );
+
+    const previousPipeSales =
+      pipeProducts.reduce(
+        (total, product) =>
+          total +
+          (customerProductSales?.previous.get(
+            normaliseProductCode(product.code)
+          ) ?? 0),
+        0
+      );
+
+    return {
+      ...row,
+      currentPipeSales,
+      previousPipeSales,
+      pipeMovement:
+        currentPipeSales - previousPipeSales,
+    };
+  });
+
+const pipeDecliningCustomers =
+  pipeCustomerPerformance
+    .filter((row) => row.pipeMovement < 0)
+    .sort(
+      (a, b) =>
+        a.pipeMovement - b.pipeMovement
+    );
+
+const pipeGrowingCustomers =
+  pipeCustomerPerformance
+    .filter((row) => row.pipeMovement > 0)
+    .sort(
+      (a, b) =>
+        b.pipeMovement - a.pipeMovement
+    );
+
+const pipeStoppedCustomers =
+  pipeCustomerPerformance
+    .filter(
+      (row) =>
+        row.previousPipeSales > 0 &&
+        row.currentPipeSales === 0
+    )
+    .sort(
+      (a, b) =>
+        b.previousPipeSales -
+        a.previousPipeSales
+    );
+
+
+
+const manifoldsGroup =
+  nbgProductGroupPerformance.find(
+    (group) => group.group === "MANIFOLDS"
+  );
+
+const manifoldProducts =
+  nbgProductPerformance.filter(
+    (product) =>
+      classifyProduct(
+        product.code,
+        product.description
+      ) === "MANIFOLDS"
+  );
+
+const manifoldCustomerPerformance =
+  rows.map((row) => {
+    const customerProductSales =
+      nbgCustomerProductSales.get(String(row.id));
+
+    const currentManifoldSales =
+      manifoldProducts.reduce(
+        (total, product) =>
+          total +
+          (customerProductSales?.current.get(
+            normaliseProductCode(product.code)
+          ) ?? 0),
+        0
+      );
+
+    const previousManifoldSales =
+      manifoldProducts.reduce(
+        (total, product) =>
+          total +
+          (customerProductSales?.previous.get(
+            normaliseProductCode(product.code)
+          ) ?? 0),
+        0
+      );
+
+    return {
+      ...row,
+      currentManifoldSales,
+      previousManifoldSales,
+      manifoldMovement:
+        currentManifoldSales - previousManifoldSales,
+    };
+  });
+
+const manifoldDecliningCustomers =
+  manifoldCustomerPerformance
+    .filter((row) => row.manifoldMovement < 0)
+    .sort(
+      (a, b) =>
+        a.manifoldMovement - b.manifoldMovement
+    );
+
+const manifoldGrowingCustomers =
+  manifoldCustomerPerformance
+    .filter((row) => row.manifoldMovement > 0)
+    .sort(
+      (a, b) =>
+        b.manifoldMovement - a.manifoldMovement
+    );
+
+const manifoldStoppedCustomers =
+  manifoldCustomerPerformance
+    .filter(
+      (row) =>
+        row.previousManifoldSales > 0 &&
+        row.currentManifoldSales === 0
+    )
+    .sort(
+      (a, b) =>
+        b.previousManifoldSales -
+        a.previousManifoldSales
+    );
+
+
+const controlsGroup =
+  nbgProductGroupPerformance.find(
+    (group) => group.group === "CONTROLS"
+  );
+
+const controlProducts =
+  nbgProductPerformance.filter(
+    (product) =>
+      classifyProduct(
+        product.code,
+        product.description
+      ) === "CONTROLS"
+  );
+
+const controlCustomerPerformance =
+  rows
+    .map((row) => {
+      const customerProductSales =
+        nbgCustomerProductSales.get(String(row.id));
+
+      const currentControlSales =
+        controlProducts.reduce(
+          (total, product) =>
+            total +
+            (customerProductSales?.current.get(
+              normaliseProductCode(product.code)
+            ) ?? 0),
+          0
+        );
+
+      const previousControlSales =
+        controlProducts.reduce(
+          (total, product) =>
+            total +
+            (customerProductSales?.previous.get(
+              normaliseProductCode(product.code)
+            ) ?? 0),
+          0
+        );
+
+      return {
+        ...row,
+        currentControlSales,
+        previousControlSales,
+        controlMovement:
+          currentControlSales - previousControlSales,
+      };
+    });
+
+const controlDecliningCustomers =
+  controlCustomerPerformance
+    .filter(
+      (row) => row.controlMovement < 0
+    )
+    .sort(
+      (a, b) =>
+        a.controlMovement -
+        b.controlMovement
+    );
+
+const controlGrowingCustomers =
+  controlCustomerPerformance
+    .filter(
+      (row) => row.controlMovement > 0
+    )
+    .sort(
+      (a, b) =>
+        b.controlMovement -
+        a.controlMovement
+    );
+
+const controlStoppedCustomers =
+  controlCustomerPerformance
+    .filter(
+      (row) =>
+        row.previousControlSales > 0 &&
+        row.currentControlSales === 0
+    )
+    .sort(
+      (a, b) =>
+        b.previousControlSales -
+        a.previousControlSales
+    );
+
 
 const nbgProductGroupCurrentTotal =
   nbgProductGroupPerformance.reduce(
@@ -1136,31 +2000,6 @@ const nbgProductGroupPreviousTotal =
       total + group.previousSales,
     0
   );
-console.log(
-  "NBG CATEGORY CHECK",
-  {
-    current:
-      nbgProductGroupCurrentTotal.toFixed(2),
-    previous:
-      nbgProductGroupPreviousTotal.toFixed(2),
-    groups:
-      nbgProductGroupPerformance.map(
-        (group) => ({
-          group: group.label,
-          current:
-            group.currentSales.toFixed(2),
-          previous:
-            group.previousSales.toFixed(2),
-          difference:
-            group.difference.toFixed(2),
-          percentage:
-            group.percentage.toFixed(1),
-          products:
-            group.productCount,
-        })
-      ),
-  }
-);
 
 const nbgOtherProducts =
   nbgProductPerformance
@@ -1183,20 +2022,6 @@ const nbgOtherProducts =
       previous: product.previousSales.toFixed(2),
     }));
 
-console.log(
-  "NBG TOP OTHER PRODUCTS",
-  nbgOtherProducts
-);
-
-console.log(
-  "NBG PRODUCT CHECK",
-  {
-    current:
-      nbgProductCurrentTotal.toFixed(2),
-    previous:
-      nbgProductPreviousTotal.toFixed(2),
-  }
-);
 
 const monthlyPerformance = monthNames.map(
   (month, monthIndex) => {
@@ -1364,6 +2189,17 @@ const memberTableRows = rows.map((row) => ({
     : null,
   trend: row.trend,
 }));
+const meetingActionGrowthCustomer =
+  meetingBriefTopGrowthCustomer;
+
+const meetingActionRecoveryCustomer =
+  meetingBriefTopDecliningCustomer;
+
+const meetingActionWinBackCustomer =
+  meetingBriefLargestStoppedCustomer;
+
+const meetingActionMlcpOpportunity =
+  mlcpActiveOpportunityRows[0] ?? null;
 
   return (
     <main className="p-8">
@@ -1522,6 +2358,185 @@ const memberTableRows = rows.map((row) => ({
       </p>
     </div>
   </div>
+</section>
+<section className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm">
+  <div className="border-b border-slate-200 px-6 py-5">
+    <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">
+      Odin Executive Intelligence
+    </p>
+
+    <h2 className="mt-1 text-xl font-bold text-slate-950">
+      NBG Meeting Brief
+    </h2>
+
+    <p className="mt-1 text-sm text-slate-500">
+      Key commercial points to take into the meeting, based on current year-to-date performance.
+    </p>
+  </div>
+
+  <div className="grid gap-4 p-6 md:grid-cols-2 xl:grid-cols-3">
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        Group Performance
+      </p>
+
+      <p className="mt-2 text-lg font-bold text-slate-950">
+        {money(totalCurrentYear)}
+      </p>
+
+      <p
+        className={`mt-1 text-sm font-semibold ${
+          meetingBriefMovement >= 0
+            ? "text-emerald-700"
+            : "text-red-700"
+        }`}
+      >
+        {meetingBriefMovement >= 0 ? "+" : ""}
+        {meetingBriefMovementPercentage.toFixed(1)}% vs {previousYear}
+      </p>
+
+      <p className="mt-2 text-sm text-slate-600">
+        {money(Math.abs(meetingBriefMovement))}{" "}
+        {meetingBriefMovement >= 0 ? "ahead of" : "behind"} the same period last year.
+      </p>
+      <p className="mt-2 text-xs font-medium text-amber-700">
+  Growth is concentrated: the top 5 growers have added{" "}
+  {money(meetingBriefGrowthValue)} against net group growth of{" "}
+  {money(Math.abs(meetingBriefMovement))}.
+</p>
+    </div>
+
+    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+        Biggest Growth Driver
+      </p>
+
+      <p className="mt-2 text-lg font-bold text-slate-950">
+        {meetingBriefTopGrowthCustomer?.name ?? "No growth customer"}
+      </p>
+
+      <p className="mt-1 text-sm font-semibold text-emerald-700">
+        {meetingBriefTopGrowthCustomer
+          ? `+${money(meetingBriefTopGrowthCustomer.movementValue)}`
+          : "—"}
+      </p>
+
+      <p className="mt-2 text-sm text-slate-600">
+        Top 5 growing members have added{" "}
+        {money(meetingBriefGrowthValue)}.
+      </p>
+    </div>
+
+    <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-red-700">
+        Biggest Customer Risk
+      </p>
+
+      <p className="mt-2 text-lg font-bold text-slate-950">
+        {meetingBriefTopDecliningCustomer?.name ?? "No declining customer"}
+      </p>
+
+      <p className="mt-1 text-sm font-semibold text-red-700">
+        {meetingBriefTopDecliningCustomer
+          ? money(meetingBriefTopDecliningCustomer.movementValue)
+          : "—"}
+      </p>
+
+      <p className="mt-2 text-sm text-slate-600">
+        Top 5 declining members are down{" "}
+        {money(Math.abs(meetingBriefDeclineValue))}.
+      </p>
+    </div>
+
+    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+        Stopped Buying
+      </p>
+
+      <p className="mt-2 text-lg font-bold text-slate-950">
+        {meetingBriefStoppedCustomers.length} members
+      </p>
+
+      <p className="mt-1 text-sm font-semibold text-amber-700">
+        {money(meetingBriefStoppedValue)} prior-year sales
+      </p>
+
+      <p className="mt-2 text-sm text-slate-600">
+        Largest stopped account:{" "}
+        <span className="font-semibold">
+          {meetingBriefLargestStoppedCustomer?.name ?? "None"}
+        </span>
+      </p>
+    </div>
+
+    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+  <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+    Strongest Category
+  </p>
+
+  <p className="mt-2 text-lg font-bold text-slate-950">
+    {meetingBriefStrongestCategory?.label ?? "—"}
+  </p>
+
+  <p className="mt-1 text-sm font-semibold text-emerald-700">
+    {meetingBriefStrongestCategory
+      ? `+${money(meetingBriefStrongestCategory.difference)} / +${meetingBriefStrongestCategory.percentage.toFixed(1)}%`
+      : "—"}
+  </p>
+
+  <p className="mt-2 text-sm text-slate-600">
+    {meetingBriefStrongestCategory?.group === "MLCP"
+      ? `${mlcpCurrentBuyers.size} of ${rows.length} members buying MLCP, leaving ${mlcpOpportunityRows.length} opportunities.`
+      : "Largest positive product-category movement year to date."}
+  </p>
+</div>
+
+<div className="rounded-lg border border-red-200 bg-red-50 p-4">
+  <p className="text-xs font-semibold uppercase tracking-wide text-red-700">
+    Biggest Category Risk
+  </p>
+
+  <p className="mt-2 text-lg font-bold text-slate-950">
+    {meetingBriefWeakestCategory?.label ?? "—"}
+  </p>
+
+  <p className="mt-1 text-sm font-semibold text-red-700">
+    {meetingBriefWeakestCategory
+      ? `${money(meetingBriefWeakestCategory.difference)} / ${meetingBriefWeakestCategory.percentage.toFixed(1)}%`
+      : "—"}
+  </p>
+
+  <p className="mt-2 text-sm text-slate-600">
+    Largest negative product-category movement year to date.
+  </p>
+</div>
+  </div>
+  <div className="border-t border-slate-200 px-6 py-4">
+  <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3">
+    <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
+      Odin Meeting Priority
+    </p>
+
+    <p className="mt-1 text-sm leading-6 text-slate-700">
+      Protect the growth being driven by{" "}
+      <span className="font-semibold text-slate-950">
+        {meetingBriefTopGrowthCustomer?.name ?? "the leading growth accounts"}
+      </span>
+      , recover declining and stopped members, and use{" "}
+      <span className="font-semibold text-slate-950">
+        {meetingBriefStrongestCategory?.label ?? "the strongest product category"}
+      </span>{" "}
+      as the clearest cross-sell opportunity across{" "}
+      <span className="font-semibold text-slate-950">
+        {meetingBriefStrongestCategory?.group === "MLCP"
+          ? mlcpOpportunityRows.length
+          : rows.length -
+            (meetingBriefStrongestCategory?.currentBuyerCount ?? 0)}
+      </span>{" "}
+      remaining NBG members.
+    </p>
+  </div>
+</div>
 </section>
 
 <section className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -1756,7 +2771,249 @@ const memberTableRows = rows.map((row) => ({
       membership remains low.
     </p>
   </div>
+<div className="border-t border-slate-200 p-5">
+  <p className="text-xs font-semibold uppercase tracking-wide text-amber-600">
+    MLCP Product Intelligence
+  </p>
 
+  <h3 className="mt-1 text-lg font-bold text-slate-950">
+    What is driving MLCP growth?
+  </h3>
+
+  <div className="mt-4 grid gap-4 md:grid-cols-3">
+    <div className="rounded-lg bg-slate-50 p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        Total MLCP
+      </p>
+
+      <p className="mt-2 text-xl font-bold text-slate-950">
+        {money(mlcpGroup?.currentSales ?? 0)}
+      </p>
+
+      <p className="mt-1 text-xs text-slate-500">
+        {previousYear}: {money(mlcpGroup?.previousSales ?? 0)}
+      </p>
+
+      <p
+        className={`mt-2 text-sm font-semibold ${
+          (mlcpGroup?.difference ?? 0) >= 0
+            ? "text-emerald-700"
+            : "text-red-700"
+        }`}
+      >
+        {(mlcpGroup?.difference ?? 0) >= 0 ? "+" : ""}
+        {money(mlcpGroup?.difference ?? 0)} ·{" "}
+        {(mlcpGroup?.percentage ?? 0) >= 0 ? "+" : ""}
+        {(mlcpGroup?.percentage ?? 0).toFixed(1)}%
+      </p>
+    </div>
+
+    <div className="rounded-lg bg-blue-50 p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+        Pre-Insulated Pipe
+      </p>
+
+      <p className="mt-2 text-xl font-bold text-slate-950">
+        {money(mlcpPreInsulatedCurrentSales)}
+      </p>
+
+      <p className="mt-1 text-xs text-slate-500">
+        {previousYear}: {money(mlcpPreInsulatedPreviousSales)}
+      </p>
+
+      <p
+        className={`mt-2 text-sm font-semibold ${
+          mlcpPreInsulatedDifference >= 0
+            ? "text-emerald-700"
+            : "text-red-700"
+        }`}
+      >
+        {mlcpPreInsulatedDifference >= 0 ? "+" : ""}
+        {money(mlcpPreInsulatedDifference)} ·{" "}
+        {mlcpPreInsulatedPercentage >= 0 ? "+" : ""}
+        {mlcpPreInsulatedPercentage.toFixed(1)}%
+      </p>
+    </div>
+
+    <div className="rounded-lg bg-amber-50 p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+        MLCP Fittings
+      </p>
+
+      <p className="mt-2 text-xl font-bold text-slate-950">
+        {money(mlcpFittingsCurrentSales)}
+      </p>
+
+      <p className="mt-1 text-xs text-slate-500">
+        {previousYear}: {money(mlcpFittingsPreviousSales)}
+      </p>
+
+      <p
+        className={`mt-2 text-sm font-semibold ${
+          mlcpFittingsDifference >= 0
+            ? "text-emerald-700"
+            : "text-red-700"
+        }`}
+      >
+        {mlcpFittingsDifference >= 0 ? "+" : ""}
+        {money(mlcpFittingsDifference)} ·{" "}
+        {mlcpFittingsPercentage >= 0 ? "+" : ""}
+        {mlcpFittingsPercentage.toFixed(1)}%
+      </p>
+    </div>
+  </div>
+</div>
+<div className="grid gap-4 px-5 pb-5 xl:grid-cols-3">
+  <div className="rounded-lg border border-slate-200 p-4">
+    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+      Top MLCP Products
+    </p>
+    <p className="mt-1 text-sm text-slate-600">
+      Highest-selling MLCP products in {currentYear}.
+    </p>
+
+    <div className="mt-4 space-y-2">
+      {topMlcpProducts.map((product, index) => (
+        <div
+          key={product.code}
+          className="flex items-center justify-between gap-4 rounded-lg bg-slate-50 px-3 py-2"
+        >
+          <div className="min-w-0">
+            <p className="text-xs text-slate-500">
+              #{index + 1} · {product.code}
+            </p>
+            <p className="truncate text-sm font-semibold text-slate-900">
+              {product.description}
+            </p>
+          </div>
+
+          <span className="shrink-0 text-sm font-bold text-slate-900">
+            {money(product.currentSales)}
+          </span>
+        </div>
+      ))}
+    </div>
+  </div>
+  <div className="rounded-lg border border-emerald-200 p-4">
+  <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+    MLCP Growth Drivers
+  </p>
+  <p className="mt-1 text-sm text-slate-600">
+    Products contributing the most additional sales in {currentYear}.
+  </p>
+
+  <div className="mt-4 space-y-2">
+    {growingMlcpProducts.map((product, index) => (
+      <div
+        key={product.code}
+        className="flex items-center justify-between gap-4 rounded-lg bg-emerald-50 px-3 py-2"
+      >
+        <div className="min-w-0">
+          <p className="text-xs text-slate-500">
+            #{index + 1} · {product.code}
+          </p>
+          <p className="truncate text-sm font-semibold text-slate-900">
+            {product.description}
+          </p>
+        </div>
+
+        <div className="shrink-0 text-right">
+          <p className="text-sm font-bold text-slate-900">
+            {money(product.currentSales)}
+          </p>
+          <p className="text-xs font-semibold text-emerald-700">
+            +{money(product.salesDifference)}
+          </p>
+        </div>
+      </div>
+    ))}
+  </div>
+</div>
+<div className="rounded-lg border border-red-200 p-4">
+  <p className="text-xs font-semibold uppercase tracking-wide text-red-700">
+    MLCP Declines
+  </p>
+  <p className="mt-1 text-sm text-slate-600">
+    Products with the largest sales decline versus {previousYear}.
+  </p>
+
+  <div className="mt-4 space-y-2">
+    {decliningMlcpProducts.map((product, index) => (
+      <div
+        key={product.code}
+        className="flex items-center justify-between gap-4 rounded-lg bg-red-50 px-3 py-2"
+      >
+        <div className="min-w-0">
+          <p className="text-xs text-slate-500">
+            #{index + 1} · {product.code}
+          </p>
+          <p className="truncate text-sm font-semibold text-slate-900">
+            {product.description}
+          </p>
+        </div>
+
+        <div className="shrink-0 text-right">
+  {product.currentSales === 0 ? (
+    <>
+      <span className="inline-block rounded-full bg-red-100 px-2 py-1 text-xs font-bold text-red-700">
+        STOPPED SELLING
+      </span>
+      <p className="mt-1 text-xs font-semibold text-red-700">
+        {money(product.salesDifference)}
+      </p>
+    </>
+  ) : (
+    <>
+      <p className="text-sm font-bold text-slate-900">
+        {money(product.currentSales)}
+      </p>
+      <p className="text-xs font-semibold text-red-700">
+        {money(product.salesDifference)}
+      </p>
+    </>
+  )}
+</div>
+      </div>
+    ))}
+  </div>
+</div>
+</div>
+<div className="px-5 pb-5">
+  <div className="rounded-lg border border-emerald-200 p-4">
+    <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+      MLCP Customer Growth Drivers
+    </p>
+
+    <p className="mt-1 text-sm text-slate-600">
+      NBG members contributing the most additional MLCP sales in {currentYear}.
+    </p>
+
+    <div className="mt-4 grid gap-2 md:grid-cols-5">
+      {mlcpCustomerGrowthDrivers.map((row, index) => (
+        <div
+          key={row.id}
+          className="rounded-lg bg-emerald-50 px-3 py-3"
+        >
+          <p className="text-xs text-slate-500">
+            #{index + 1}
+          </p>
+
+          <p className="mt-1 truncate text-sm font-semibold text-slate-900">
+            {row.name}
+          </p>
+
+          <p className="mt-2 text-sm font-bold text-slate-900">
+            {money(row.currentMlcpSales)}
+          </p>
+
+          <p className="text-xs font-semibold text-emerald-700">
+            +{money(row.mlcpGrowth)}
+          </p>
+        </div>
+      ))}
+    </div>
+  </div>
+</div>
   <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-5">
     <div className="rounded-lg bg-slate-50 p-4">
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -1826,56 +3083,42 @@ const memberTableRows = rows.map((row) => ({
         {mlcpOpportunityCustomers.length}
       </p>
       <p className="mt-1 text-xs text-amber-700">
-        Members not buying MLCP
+        {mlcpActiveOpportunityRows.length} active •{" "}
+        {mlcpDormantOpportunityRows.length} dormant
       </p>
     </a>
     </div>
  
-  <div
+ <MlcpExpandableSection
   id="mlcp-lapsed-buyers"
-  className="border-t border-slate-200 p-5 scroll-mt-6"
+  title="Lapsed MLCP Buyers"
+  subtitle={`Bought MLCP in ${previousYear}, but not in ${currentYear}.`}
+  count={mlcpLapsedBuyerRows.length}
 >
-  <div className="grid gap-5 lg:grid-cols-3">
-    <div>
-      <p className="text-xs font-semibold uppercase tracking-wide text-red-700">
-        Lapsed MLCP Buyers
-      </p>
+  <div className="space-y-2">
+    {mlcpLapsedBuyerRows.map((row) => (
+      <div
+        key={row.id}
+        className="flex items-center justify-between rounded-lg bg-red-50 px-4 py-3"
+      >
+        <span className="font-semibold text-slate-900">
+          {row.name}
+        </span>
 
-      <p className="mt-1 text-sm text-slate-600">
-        Bought MLCP in {previousYear}, but not in {currentYear}.
-      </p>
-
-      <div className="mt-4 space-y-2">
-        {mlcpLapsedBuyerRows.map((row) => (
-          <div
-            key={row.id}
-            className="flex items-center justify-between rounded-lg bg-red-50 px-4 py-3"
-          >
-            <span className="font-semibold text-slate-900">
-              {row.name}
-            </span>
-
-            <span className="font-bold text-red-700">
-              {money(row.previousYearSales)}
-            </span>
-          </div>
-        ))}
+        <span className="font-bold text-red-700">
+          {money(row.mlcpSales)}
+        </span>
       </div>
-    </div>
-    </div>
-    <div
+    ))}
+  </div>
+</MlcpExpandableSection>
+   <MlcpExpandableSection
   id="mlcp-new-buyers"
-  className="scroll-mt-6"
+  title="New MLCP Buyers"
+  subtitle={`New MLCP buyers in ${currentYear}.`}
+  count={mlcpNewBuyerRows.length}
 >
-  <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-    New MLCP Buyers
-  </p>
-
-  <p className="mt-1 text-sm text-slate-600">
-    New MLCP buyers in {currentYear}.
-  </p>
-
-  <div className="mt-4 space-y-2">
+  <div className="space-y-2">
     {mlcpNewBuyerRows.map((row) => (
       <div
         key={row.id}
@@ -1886,25 +3129,20 @@ const memberTableRows = rows.map((row) => ({
         </span>
 
         <span className="font-bold text-emerald-700">
-          {money(row.currentYearSales)}
+          {money(row.mlcpSales)}
         </span>
       </div>
     ))}
   </div>
-  <div>
-   <div
+</MlcpExpandableSection>
+
+ <MlcpExpandableSection
   id="mlcp-current-buyers"
-  className="mb-5 scroll-mt-6"
+  title="Current MLCP Buyers"
+  subtitle={`All NBG members buying MLCP in ${currentYear}.`}
+  count={mlcpCurrentBuyerRows.length}
 >
-  <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">
-    Current MLCP Buyers
-  </p>
-
-  <p className="mt-1 text-sm text-slate-600">
-    All NBG members buying MLCP in {currentYear}.
-  </p>
-
-  <div className="mt-4 space-y-2">
+  <div className="space-y-2">
     {mlcpCurrentBuyerRows.map((row) => (
       <div
         key={row.id}
@@ -1918,11 +3156,12 @@ const memberTableRows = rows.map((row) => ({
 </Link>
 
         <span className="font-bold text-slate-700">
-          {money(row.currentYearSales)}
+          {money(row.mlcpSales)}
         </span>
       </div>
     ))}
   </div>
+</MlcpExpandableSection>
 
   <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
     Top MLCP Opportunities
@@ -1933,14 +3172,17 @@ const memberTableRows = rows.map((row) => ({
   </p>
 
   <div className="mt-4 space-y-2">
-    {mlcpOpportunityRows.slice(0, 5).map((row) => (
+    {mlcpActiveOpportunityRows.slice(0, 5).map((row) => (
       <div
         key={row.id}
         className="flex items-center justify-between rounded-lg bg-amber-50 px-4 py-3"
       >
-        <span className="font-semibold text-slate-900">
-          {row.name}
-        </span>
+        <Link
+  href={`/commercial/customers/${row.id}`}
+  className="font-semibold text-slate-900 hover:text-blue-700 hover:underline"
+>
+  {row.name}
+</Link>
 
         <span className="font-bold text-amber-700">
           {money(row.currentYearSales)}
@@ -1948,29 +3190,13 @@ const memberTableRows = rows.map((row) => ({
       </div>
     ))}
   </div>
-</div>
-</div>
-  </div>
-</div>
-<div
+
+<MlcpExpandableSection
   id="mlcp-opportunities"
-  className="border-t border-slate-200 p-5 scroll-mt-6"
+  title="Active MLCP Opportunities"
+  subtitle={`Members buying from Hetta in ${currentYear} but not currently buying MLCP, ranked by spend.`}
+  count={mlcpActiveOpportunityRows.length}
 >
-  <div className="flex items-end justify-between gap-4">
-    <div>
-      <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
-        All MLCP Opportunities
-      </p>
-
-      <h3 className="mt-1 text-lg font-bold text-slate-950">
-        {mlcpOpportunityRows.length} NBG Members Not Buying MLCP
-      </h3>
-
-      <p className="mt-1 text-sm text-slate-600">
-        Ranked by {currentYear} spend with Hetta, highest opportunity first.
-      </p>
-    </div>
-  </div>
 
   <div className="mt-4 overflow-x-auto">
     <table className="w-full text-left text-sm">
@@ -1991,7 +3217,7 @@ const memberTableRows = rows.map((row) => ({
       </thead>
 
       <tbody>
-        {mlcpOpportunityRows.map((row, index) => (
+        {mlcpActiveOpportunityRows.map((row, index) => (
           <tr
             key={row.id}
             className="border-t border-slate-100"
@@ -2000,9 +3226,14 @@ const memberTableRows = rows.map((row) => ({
               {index + 1}
             </td>
 
-            <td className="px-5 py-3 font-semibold text-slate-950">
-              {row.name}
-            </td>
+            <td className="px-5 py-3">
+  <Link
+    href={`/commercial/customers/${row.id}`}
+    className="font-semibold text-slate-950 hover:text-blue-700 hover:underline"
+  >
+    {row.name}
+  </Link>
+</td>
 <td className="px-5 py-3">
   {mlcpPreviousBuyers.has(String(row.id)) ? (
     <span className="rounded-full bg-red-50 px-2 py-1 text-xs font-semibold text-red-700">
@@ -2026,7 +3257,1198 @@ const memberTableRows = rows.map((row) => ({
       </tbody>
     </table>
   </div>
+</MlcpExpandableSection>
+<MlcpExpandableSection
+  id="mlcp-dormant-opportunities"
+  title="Dormant NBG Members"
+  subtitle={`Active NBG members with no Hetta spend in ${currentYear} and not currently buying MLCP.`}
+  count={mlcpDormantOpportunityRows.length}
+>
+  <div className="mt-4 overflow-x-auto">
+    <table className="w-full text-left text-sm">
+      <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+        <tr>
+          <th className="px-5 py-3">Rank</th>
+          <th className="px-5 py-3">NBG Member</th>
+          <th className="px-5 py-3">Opportunity Type</th>
+          <th className="px-5 py-3 text-right">
+            {currentYear} Spend
+          </th>
+          <th className="px-5 py-3 text-right">
+            {previousYear} Spend
+          </th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {mlcpDormantOpportunityRows.map((row, index) => (
+          <tr
+            key={row.id}
+            className="border-t border-slate-100"
+          >
+            <td className="px-5 py-3 font-semibold text-slate-500">
+              {index + 1}
+            </td>
+
+            <td className="px-5 py-3">
+  <Link
+    href={`/commercial/customers/${row.id}`}
+    className="font-semibold text-slate-950 hover:text-blue-700 hover:underline"
+  >
+    {row.name}
+  </Link>
+</td>
+
+            <td className="px-5 py-3">
+              {mlcpPreviousBuyers.has(String(row.id)) ? (
+                <span className="rounded-full bg-red-50 px-2 py-1 text-xs font-semibold text-red-700">
+                  Win Back
+                </span>
+              ) : (
+                <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">
+                  Dormant
+                </span>
+              )}
+            </td>
+
+            <td className="px-5 py-3 text-right font-semibold">
+              {money(row.currentYearSales)}
+            </td>
+
+            <td className="px-5 py-3 text-right">
+              {money(row.previousYearSales)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+</MlcpExpandableSection>
+</section>
+<section className="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white">
+  <div className="border-b border-slate-200 px-5 py-4">
+    <p className="text-xs font-semibold uppercase tracking-wide text-red-600">
+      Floor Systems Intelligence
+    </p>
+
+    <h2 className="mt-1 text-lg font-bold text-slate-950">
+      What is driving the Floor Systems decline?
+    </h2>
+
+    <p className="mt-1 text-sm text-slate-500">
+      NBG Floor Systems sales are down {money(Math.abs(floorSystemsGroup?.difference ?? 0))} versus the same period last year.
+    </p>
+  </div>
+
+  <div className="grid gap-4 border-b border-slate-200 p-5 md:grid-cols-3">
+    <div className="rounded-lg bg-slate-50 p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        {currentYear} Sales
+      </p>
+      <p className="mt-2 text-2xl font-bold text-slate-950">
+        {money(floorSystemsGroup?.currentSales ?? 0)}
+      </p>
+    </div>
+
+    <div className="rounded-lg bg-slate-50 p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        {previousYear} Sales
+      </p>
+      <p className="mt-2 text-2xl font-bold text-slate-950">
+        {money(floorSystemsGroup?.previousSales ?? 0)}
+      </p>
+    </div>
+
+    <div className="rounded-lg bg-red-50 p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-red-700">
+        Movement
+      </p>
+      <p className="mt-2 text-2xl font-bold text-red-700">
+        -{money(Math.abs(floorSystemsGroup?.difference ?? 0))}
+      </p>
+      <p className="mt-1 text-xs text-red-700">
+       {(floorSystemsGroup?.percentage ?? 0).toFixed(1)}%
+      </p>
+    </div>
+  </div>
+
+  <div className="p-5">
+    <p className="text-xs font-semibold uppercase tracking-wide text-red-600">
+      Biggest Customer Declines
+    </p>
+
+    <p className="mt-1 text-sm text-slate-500">
+      NBG members contributing most to the Floor Systems sales decline.
+    </p>
+
+    <div className="mt-4 space-y-2">
+      {floorSystemDecliningCustomers.slice(0, 5).map((row, index) => (
+        <div
+          key={row.id}
+          className="flex items-center justify-between rounded-lg bg-red-50 px-4 py-3"
+        >
+          <div>
+            <span className="mr-3 text-sm text-slate-500">
+              #{index + 1}
+            </span>
+
+            <Link
+              href={`/commercial/customers/${row.id}`}
+              className="font-semibold text-slate-950 hover:text-blue-700 hover:underline"
+            >
+              {row.name}
+            </Link>
+          </div>
+
+          <div className="text-right">
+            <p className="font-bold text-red-700">
+              {money(row.floorSystemMovement)}
+            </p>
+            <p className="text-xs text-slate-500">
+              {money(row.previousFloorSystemSales)} →{" "}
+              {money(row.currentFloorSystemSales)}
+            </p>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+  <div className="border-t border-slate-200 p-5">
+  <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+    Growth Offsets
+  </p>
+
+  <p className="mt-1 text-sm text-slate-500">
+    NBG members helping offset the Floor Systems decline.
+  </p>
+
+  <div className="mt-4 space-y-2">
+    {floorSystemGrowingCustomers.slice(0, 5).map((row, index) => (
+      <div
+        key={row.id}
+        className="flex items-center justify-between rounded-lg bg-emerald-50 px-4 py-3"
+      >
+        <div>
+          <span className="mr-3 text-sm text-slate-500">
+            #{index + 1}
+          </span>
+
+          <Link
+            href={`/commercial/customers/${row.id}`}
+            className="font-semibold text-slate-950 hover:text-blue-700 hover:underline"
+          >
+            {row.name}
+          </Link>
+        </div>
+
+        <div className="text-right">
+          <p className="font-bold text-emerald-700">
+            +{money(row.floorSystemMovement)}
+          </p>
+
+          <p className="text-xs text-slate-500">
+            {money(row.previousFloorSystemSales)} →{" "}
+            {money(row.currentFloorSystemSales)}
+          </p>
+        </div>
+      </div>
+    ))}
+  </div>
 </div>
+<div className="border-t border-slate-200 p-5">
+  <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+    Stopped Buying Floor Systems
+  </p>
+
+  <p className="mt-1 text-sm text-slate-500">
+    NBG members that bought Floor Systems in {previousYear} but have bought none in {currentYear}.
+  </p>
+
+  <div className="mt-4 grid gap-3 md:grid-cols-2">
+    {floorSystemStoppedCustomers.map((row) => (
+      <div
+        key={row.id}
+        className="flex items-center justify-between rounded-lg bg-amber-50 px-4 py-3"
+      >
+        <Link
+          href={`/commercial/customers/${row.id}`}
+          className="font-semibold text-slate-950 hover:text-blue-700 hover:underline"
+        >
+          {row.name}
+        </Link>
+
+        <div className="text-right">
+          <p className="font-bold text-amber-700">
+            {money(row.previousFloorSystemSales)}
+          </p>
+          <p className="text-xs text-slate-500">
+            {previousYear} spend
+          </p>
+        </div>
+      </div>
+    ))}
+  </div>
+</div>
+</section>
+{/* Electric UFH Intelligence */}
+<section className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+  <div className="mb-6">
+    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+      Electric UFH Intelligence
+    </div>
+
+    <h2 className="mt-1 text-xl font-semibold text-slate-900">
+      What is driving Electric UFH growth?
+    </h2>
+
+    <p className="mt-2 text-sm text-slate-600">
+      Electric UFH sales are{" "}
+      <span
+        className={
+          (electricUfhGroup?.difference ?? 0) >= 0
+            ? "font-semibold text-emerald-600"
+            : "font-semibold text-red-600"
+        }
+      >
+        {(electricUfhGroup?.difference ?? 0) >= 0 ? "up " : "down "}
+        {money(Math.abs(electricUfhGroup?.difference ?? 0))}
+      </span>{" "}
+      against the same period last year.
+    </p>
+  </div>
+
+  <div className="grid gap-4 md:grid-cols-4">
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+        {currentYear} YTD
+      </div>
+      <div className="mt-2 text-2xl font-semibold text-slate-900">
+        {money(electricUfhGroup?.currentSales ?? 0)}
+      </div>
+    </div>
+
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+        {previousYear} YTD
+      </div>
+      <div className="mt-2 text-2xl font-semibold text-slate-900">
+        {money(electricUfhGroup?.previousSales ?? 0)}
+      </div>
+    </div>
+
+    <div
+      className={`rounded-2xl border p-4 ${
+        (electricUfhGroup?.difference ?? 0) >= 0
+          ? "border-emerald-200 bg-emerald-50"
+          : "border-red-200 bg-red-50"
+      }`}
+    >
+      <div
+        className={`text-xs font-medium uppercase tracking-wide ${
+          (electricUfhGroup?.difference ?? 0) >= 0
+            ? "text-emerald-600"
+            : "text-red-600"
+        }`}
+      >
+        Movement
+      </div>
+      <div
+        className={`mt-2 text-2xl font-semibold ${
+          (electricUfhGroup?.difference ?? 0) >= 0
+            ? "text-emerald-700"
+            : "text-red-700"
+        }`}
+      >
+        {(electricUfhGroup?.difference ?? 0) >= 0 ? "+" : ""}
+        {money(electricUfhGroup?.difference ?? 0)}
+      </div>
+    </div>
+
+    <div
+      className={`rounded-2xl border p-4 ${
+        (electricUfhGroup?.percentage ?? 0) >= 0
+          ? "border-emerald-200 bg-emerald-50"
+          : "border-red-200 bg-red-50"
+      }`}
+    >
+      <div
+        className={`text-xs font-medium uppercase tracking-wide ${
+          (electricUfhGroup?.percentage ?? 0) >= 0
+            ? "text-emerald-600"
+            : "text-red-600"
+        }`}
+      >
+        Percentage
+      </div>
+      <div
+        className={`mt-2 text-2xl font-semibold ${
+          (electricUfhGroup?.percentage ?? 0) >= 0
+            ? "text-emerald-700"
+            : "text-red-700"
+        }`}
+      >
+        {(electricUfhGroup?.percentage ?? 0) >= 0 ? "+" : ""}
+        {(electricUfhGroup?.percentage ?? 0).toFixed(1)}%
+      </div>
+    </div>
+  </div>
+
+  <div className="mt-6 grid gap-6 lg:grid-cols-2">
+    <div>
+      <div className="mb-3">
+        <h3 className="font-semibold text-slate-900">
+          Biggest Growth Contributors
+        </h3>
+        <p className="text-sm text-slate-500">
+          Customers contributing most to Electric UFH growth.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        {electricUfhGrowingCustomers.slice(0, 5).map((row) => (
+          <Link
+            key={row.id}
+            href={`/commercial/customers/${row.id}?products=top#product-performance`}
+            className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 transition hover:border-emerald-200 hover:bg-emerald-50"
+          >
+            <div className="min-w-0 pr-4">
+              <div className="truncate font-medium text-slate-900">
+                {row.name}
+              </div>
+              <div className="mt-1 text-xs text-slate-500">
+                {money(row.previousElectricUfhSales)} →{" "}
+                {money(row.currentElectricUfhSales)}
+              </div>
+            </div>
+
+            <div className="shrink-0 font-semibold text-emerald-600">
+              +{money(row.electricUfhMovement)}
+            </div>
+          </Link>
+        ))}
+      </div>
+    </div>
+
+    <div>
+      <div className="mb-3">
+        <h3 className="font-semibold text-slate-900">
+          Biggest Customer Declines
+        </h3>
+        <p className="text-sm text-slate-500">
+          Customers offsetting some of the Electric UFH growth.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        {electricUfhDecliningCustomers.slice(0, 5).map((row) => (
+          <Link
+            key={row.id}
+            href={`/commercial/customers/${row.id}?products=decline#product-performance`}
+            className="flex items-center justify-between rounded-xl border border-red-100 bg-red-50/60 px-4 py-3 transition hover:border-red-200 hover:bg-red-50"
+          >
+            <div className="min-w-0 pr-4">
+              <div className="truncate font-medium text-slate-900">
+                {row.name}
+              </div>
+              <div className="mt-1 text-xs text-slate-500">
+  {money(row.previousElectricUfhSales)} →{" "}
+  {row.currentElectricUfhSales < 0
+    ? `NET CREDIT ${money(Math.abs(row.currentElectricUfhSales))}`
+    : money(row.currentElectricUfhSales)}
+</div>
+            </div>
+
+            <div className="shrink-0 font-semibold text-red-600">
+              {money(row.electricUfhMovement)}
+            </div>
+          </Link>
+        ))}
+      </div>
+    </div>
+  </div>
+
+  {electricUfhStoppedCustomers.length > 0 && (
+    <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
+      <div className="mb-3">
+        <h3 className="font-semibold text-slate-900">
+          Stopped Buying Electric UFH
+        </h3>
+        <p className="text-sm text-slate-600">
+          Customers who bought Electric UFH in {previousYear} but have recorded
+          no Electric UFH sales in {currentYear}.
+        </p>
+      </div>
+
+      <div className="grid gap-2 md:grid-cols-2">
+        {electricUfhStoppedCustomers.map((row) => (
+          <Link
+            key={row.id}
+            href={`/commercial/customers/${row.id}?products=none#product-performance`}
+            className="flex items-center justify-between rounded-xl border border-amber-200 bg-white px-4 py-3 transition hover:bg-amber-50"
+          >
+            <span className="min-w-0 truncate font-medium text-slate-900">
+              {row.name}
+            </span>
+
+            <span className="ml-4 shrink-0 text-sm font-semibold text-amber-700">
+              {money(row.previousElectricUfhSales)}
+            </span>
+          </Link>
+        ))}
+      </div>
+    </div>
+  )}
+</section>
+{/* Accessories Intelligence */}
+<section className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+  <div className="mb-6">
+    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+      Accessories Intelligence
+    </div>
+
+    <h2 className="mt-1 text-xl font-semibold text-slate-900">
+      What is driving the Accessories decline?
+    </h2>
+
+    <p className="mt-2 text-sm text-slate-600">
+      Accessories sales are down{" "}
+      <span className="font-semibold text-red-600">
+        {money(Math.abs(accessoriesGroup?.difference ?? 0))}
+      </span>{" "}
+      against the same period last year.
+    </p>
+  </div>
+
+  <div className="grid gap-4 md:grid-cols-4">
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+        {currentYear} YTD
+      </div>
+      <div className="mt-2 text-2xl font-semibold text-slate-900">
+        {money(accessoriesGroup?.currentSales ?? 0)}
+      </div>
+    </div>
+
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+        {previousYear} YTD
+      </div>
+      <div className="mt-2 text-2xl font-semibold text-slate-900">
+        {money(accessoriesGroup?.previousSales ?? 0)}
+      </div>
+    </div>
+
+    <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
+      <div className="text-xs font-medium uppercase tracking-wide text-red-600">
+        Movement
+      </div>
+      <div className="mt-2 text-2xl font-semibold text-red-700">
+        {money(accessoriesGroup?.difference ?? 0)}
+      </div>
+    </div>
+
+    <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
+      <div className="text-xs font-medium uppercase tracking-wide text-red-600">
+        Percentage
+      </div>
+      <div className="mt-2 text-2xl font-semibold text-red-700">
+        {(accessoriesGroup?.percentage ?? 0).toFixed(1)}%
+      </div>
+    </div>
+  </div>
+
+  <div className="mt-6 grid gap-6 lg:grid-cols-2">
+    <div>
+      <div className="mb-3">
+        <h3 className="font-semibold text-slate-900">
+          Biggest Customer Declines
+        </h3>
+        <p className="text-sm text-slate-500">
+          Customers contributing most to the Accessories decline.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        {accessoryDecliningCustomers.slice(0, 5).map((row) => (
+          <Link
+            key={row.id}
+            href={`/commercial/customers/${row.id}?products=decline#product-performance`}
+            className="flex items-center justify-between rounded-xl border border-red-100 bg-red-50/60 px-4 py-3 transition hover:border-red-200 hover:bg-red-50"
+          >
+            <div className="min-w-0 pr-4">
+              <div className="truncate font-medium text-slate-900">
+                {row.name}
+              </div>
+              <div className="mt-1 text-xs text-slate-500">
+                {money(row.previousAccessorySales)} →{" "}
+                {money(row.currentAccessorySales)}
+              </div>
+            </div>
+
+            <div className="shrink-0 font-semibold text-red-600">
+              {money(row.accessoryMovement)}
+            </div>
+          </Link>
+        ))}
+      </div>
+    </div>
+
+    <div>
+      <div className="mb-3">
+        <h3 className="font-semibold text-slate-900">
+          Growth Offsets
+        </h3>
+        <p className="text-sm text-slate-500">
+          Customers helping offset the Accessories decline.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        {accessoryGrowingCustomers.slice(0, 5).map((row) => (
+          <Link
+            key={row.id}
+            href={`/commercial/customers/${row.id}?products=top#product-performance`}
+            className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 transition hover:border-emerald-200 hover:bg-emerald-50"
+          >
+            <div className="min-w-0 pr-4">
+              <div className="truncate font-medium text-slate-900">
+                {row.name}
+              </div>
+              <div className="mt-1 text-xs text-slate-500">
+                {money(row.previousAccessorySales)} →{" "}
+                {money(row.currentAccessorySales)}
+              </div>
+            </div>
+
+            <div className="shrink-0 font-semibold text-emerald-600">
+              +{money(row.accessoryMovement)}
+            </div>
+          </Link>
+        ))}
+      </div>
+    </div>
+  </div>
+
+  {accessoryStoppedCustomers.length > 0 && (
+    <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
+      <div className="mb-3">
+        <h3 className="font-semibold text-slate-900">
+          Stopped Buying Accessories
+        </h3>
+        <p className="text-sm text-slate-600">
+          Customers who bought Accessories in {previousYear} but have recorded
+          no Accessories sales in {currentYear}.
+        </p>
+      </div>
+
+      <div className="grid gap-2 md:grid-cols-2">
+        {accessoryStoppedCustomers.map((row) => (
+          <Link
+            key={row.id}
+            href={`/commercial/customers/${row.id}?products=none#product-performance`}
+            className="flex items-center justify-between rounded-xl border border-amber-200 bg-white px-4 py-3 transition hover:bg-amber-50"
+          >
+            <span className="min-w-0 truncate font-medium text-slate-900">
+              {row.name}
+            </span>
+
+            <span className="ml-4 shrink-0 text-sm font-semibold text-amber-700">
+              {money(row.previousAccessorySales)}
+            </span>
+          </Link>
+        ))}
+      </div>
+    </div>
+  )}
+</section>
+{/* Pipe Intelligence */}
+<section className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+  <div className="mb-6">
+    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+      Pipe Intelligence
+    </div>
+
+    <h2 className="mt-1 text-xl font-semibold text-slate-900">
+      What is driving Pipe growth?
+    </h2>
+
+    <p className="mt-2 text-sm text-slate-600">
+      Pipe sales are{" "}
+      <span
+        className={
+          (pipeGroup?.difference ?? 0) >= 0
+            ? "font-semibold text-emerald-600"
+            : "font-semibold text-red-600"
+        }
+      >
+        {(pipeGroup?.difference ?? 0) >= 0 ? "up " : "down "}
+        {money(Math.abs(pipeGroup?.difference ?? 0))}
+      </span>{" "}
+      against the same period last year.
+    </p>
+  </div>
+
+  <div className="grid gap-4 md:grid-cols-4">
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+        {currentYear} YTD
+      </div>
+      <div className="mt-2 text-2xl font-semibold text-slate-900">
+        {money(pipeGroup?.currentSales ?? 0)}
+      </div>
+    </div>
+
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+        {previousYear} YTD
+      </div>
+      <div className="mt-2 text-2xl font-semibold text-slate-900">
+        {money(pipeGroup?.previousSales ?? 0)}
+      </div>
+    </div>
+
+    <div
+      className={`rounded-2xl border p-4 ${
+        (pipeGroup?.difference ?? 0) >= 0
+          ? "border-emerald-200 bg-emerald-50"
+          : "border-red-200 bg-red-50"
+      }`}
+    >
+      <div
+        className={`text-xs font-medium uppercase tracking-wide ${
+          (pipeGroup?.difference ?? 0) >= 0
+            ? "text-emerald-600"
+            : "text-red-600"
+        }`}
+      >
+        Movement
+      </div>
+
+      <div
+        className={`mt-2 text-2xl font-semibold ${
+          (pipeGroup?.difference ?? 0) >= 0
+            ? "text-emerald-700"
+            : "text-red-700"
+        }`}
+      >
+        {(pipeGroup?.difference ?? 0) >= 0 ? "+" : ""}
+        {money(pipeGroup?.difference ?? 0)}
+      </div>
+    </div>
+
+    <div
+      className={`rounded-2xl border p-4 ${
+        (pipeGroup?.percentage ?? 0) >= 0
+          ? "border-emerald-200 bg-emerald-50"
+          : "border-red-200 bg-red-50"
+      }`}
+    >
+      <div
+        className={`text-xs font-medium uppercase tracking-wide ${
+          (pipeGroup?.percentage ?? 0) >= 0
+            ? "text-emerald-600"
+            : "text-red-600"
+        }`}
+      >
+        Percentage
+      </div>
+
+      <div
+        className={`mt-2 text-2xl font-semibold ${
+          (pipeGroup?.percentage ?? 0) >= 0
+            ? "text-emerald-700"
+            : "text-red-700"
+        }`}
+      >
+        {(pipeGroup?.percentage ?? 0) >= 0 ? "+" : ""}
+        {(pipeGroup?.percentage ?? 0).toFixed(1)}%
+      </div>
+    </div>
+  </div>
+
+  <div className="mt-6 grid gap-6 lg:grid-cols-2">
+    <div>
+      <div className="mb-3">
+        <h3 className="font-semibold text-slate-900">
+          Biggest Growth Contributors
+        </h3>
+        <p className="text-sm text-slate-500">
+          Customers contributing most to Pipe growth.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        {pipeGrowingCustomers.slice(0, 5).map((row) => (
+          <Link
+            key={row.id}
+            href={`/commercial/customers/${row.id}?products=top#product-performance`}
+            className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 transition hover:border-emerald-200 hover:bg-emerald-50"
+          >
+            <div className="min-w-0 pr-4">
+              <div className="truncate font-medium text-slate-900">
+                {row.name}
+              </div>
+
+              <div className="mt-1 text-xs text-slate-500">
+                {money(row.previousPipeSales)} →{" "}
+                {money(row.currentPipeSales)}
+              </div>
+            </div>
+
+            <div className="shrink-0 font-semibold text-emerald-600">
+              +{money(row.pipeMovement)}
+            </div>
+          </Link>
+        ))}
+      </div>
+    </div>
+
+    <div>
+      <div className="mb-3">
+        <h3 className="font-semibold text-slate-900">
+          Biggest Customer Declines
+        </h3>
+        <p className="text-sm text-slate-500">
+          Customers offsetting some of the Pipe growth.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        {pipeDecliningCustomers.slice(0, 5).map((row) => (
+          <Link
+            key={row.id}
+            href={`/commercial/customers/${row.id}?products=decline#product-performance`}
+            className="flex items-center justify-between rounded-xl border border-red-100 bg-red-50/60 px-4 py-3 transition hover:border-red-200 hover:bg-red-50"
+          >
+            <div className="min-w-0 pr-4">
+              <div className="truncate font-medium text-slate-900">
+                {row.name}
+              </div>
+
+              <div className="mt-1 text-xs text-slate-500">
+                {money(row.previousPipeSales)} →{" "}
+                {money(row.currentPipeSales)}
+              </div>
+            </div>
+
+            <div className="shrink-0 font-semibold text-red-600">
+              {money(row.pipeMovement)}
+            </div>
+          </Link>
+        ))}
+      </div>
+    </div>
+  </div>
+
+  {pipeStoppedCustomers.length > 0 && (
+    <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
+      <div className="mb-3">
+        <h3 className="font-semibold text-slate-900">
+          Stopped Buying Pipe
+        </h3>
+
+        <p className="text-sm text-slate-600">
+          Customers who bought Pipe in {previousYear} but have recorded no Pipe
+          sales in {currentYear}.
+        </p>
+      </div>
+
+      <div className="grid gap-2 md:grid-cols-2">
+        {pipeStoppedCustomers.map((row) => (
+          <Link
+            key={row.id}
+            href={`/commercial/customers/${row.id}?products=none#product-performance`}
+            className="flex items-center justify-between rounded-xl border border-amber-200 bg-white px-4 py-3 transition hover:bg-amber-50"
+          >
+            <span className="min-w-0 truncate font-medium text-slate-900">
+              {row.name}
+            </span>
+
+            <span className="ml-4 shrink-0 text-sm font-semibold text-amber-700">
+              {money(row.previousPipeSales)}
+            </span>
+          </Link>
+        ))}
+      </div>
+    </div>
+  )}
+</section>
+{/* Manifolds Intelligence */}
+<section className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+  <div className="mb-6">
+    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+      Manifolds Intelligence
+    </div>
+
+    <h2 className="mt-1 text-xl font-semibold text-slate-900">
+      What is happening with Manifold sales?
+    </h2>
+
+    <p className="mt-2 text-sm text-slate-600">
+      Manifold sales are{" "}
+      <span
+        className={
+          (manifoldsGroup?.difference ?? 0) >= 0
+            ? "font-semibold text-emerald-600"
+            : "font-semibold text-red-600"
+        }
+      >
+        {(manifoldsGroup?.difference ?? 0) >= 0 ? "up " : "down "}
+        {money(Math.abs(manifoldsGroup?.difference ?? 0))}
+      </span>{" "}
+      against the same period last year.
+    </p>
+  </div>
+
+  <div className="grid gap-4 md:grid-cols-4">
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+        {currentYear} YTD
+      </div>
+      <div className="mt-2 text-2xl font-semibold text-slate-900">
+        {money(manifoldsGroup?.currentSales ?? 0)}
+      </div>
+    </div>
+
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+        {previousYear} YTD
+      </div>
+      <div className="mt-2 text-2xl font-semibold text-slate-900">
+        {money(manifoldsGroup?.previousSales ?? 0)}
+      </div>
+    </div>
+
+    <div
+      className={`rounded-2xl border p-4 ${
+        (manifoldsGroup?.difference ?? 0) >= 0
+          ? "border-emerald-200 bg-emerald-50"
+          : "border-red-200 bg-red-50"
+      }`}
+    >
+      <div
+        className={`text-xs font-medium uppercase tracking-wide ${
+          (manifoldsGroup?.difference ?? 0) >= 0
+            ? "text-emerald-600"
+            : "text-red-600"
+        }`}
+      >
+        Movement
+      </div>
+
+      <div
+        className={`mt-2 text-2xl font-semibold ${
+          (manifoldsGroup?.difference ?? 0) >= 0
+            ? "text-emerald-700"
+            : "text-red-700"
+        }`}
+      >
+        {(manifoldsGroup?.difference ?? 0) >= 0 ? "+" : ""}
+        {money(manifoldsGroup?.difference ?? 0)}
+      </div>
+    </div>
+
+    <div
+      className={`rounded-2xl border p-4 ${
+        (manifoldsGroup?.percentage ?? 0) >= 0
+          ? "border-emerald-200 bg-emerald-50"
+          : "border-red-200 bg-red-50"
+      }`}
+    >
+      <div
+        className={`text-xs font-medium uppercase tracking-wide ${
+          (manifoldsGroup?.percentage ?? 0) >= 0
+            ? "text-emerald-600"
+            : "text-red-600"
+        }`}
+      >
+        Percentage
+      </div>
+
+      <div
+        className={`mt-2 text-2xl font-semibold ${
+          (manifoldsGroup?.percentage ?? 0) >= 0
+            ? "text-emerald-700"
+            : "text-red-700"
+        }`}
+      >
+        {(manifoldsGroup?.percentage ?? 0) >= 0 ? "+" : ""}
+        {(manifoldsGroup?.percentage ?? 0).toFixed(1)}%
+      </div>
+    </div>
+  </div>
+
+  <div className="mt-6 grid gap-6 lg:grid-cols-2">
+    <div>
+      <div className="mb-3">
+        <h3 className="font-semibold text-slate-900">
+          Biggest Customer Declines
+        </h3>
+        <p className="text-sm text-slate-500">
+          Customers contributing most to lost Manifold sales.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        {manifoldDecliningCustomers.slice(0, 5).map((row) => (
+          <Link
+            key={row.id}
+            href={`/commercial/customers/${row.id}?products=decline#product-performance`}
+            className="flex items-center justify-between rounded-xl border border-red-100 bg-red-50/60 px-4 py-3 transition hover:border-red-200 hover:bg-red-50"
+          >
+            <div className="min-w-0 pr-4">
+              <div className="truncate font-medium text-slate-900">
+                {row.name}
+              </div>
+
+              <div className="mt-1 text-xs text-slate-500">
+                {money(row.previousManifoldSales)} →{" "}
+                {money(row.currentManifoldSales)}
+              </div>
+            </div>
+
+            <div className="shrink-0 font-semibold text-red-600">
+              {money(row.manifoldMovement)}
+            </div>
+          </Link>
+        ))}
+      </div>
+    </div>
+
+    <div>
+      <div className="mb-3">
+        <h3 className="font-semibold text-slate-900">
+          Growth Offsets
+        </h3>
+        <p className="text-sm text-slate-500">
+          Customers generating additional Manifold sales.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        {manifoldGrowingCustomers.slice(0, 5).map((row) => (
+          <Link
+            key={row.id}
+            href={`/commercial/customers/${row.id}?products=top#product-performance`}
+            className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 transition hover:border-emerald-200 hover:bg-emerald-50"
+          >
+            <div className="min-w-0 pr-4">
+              <div className="truncate font-medium text-slate-900">
+                {row.name}
+              </div>
+
+              <div className="mt-1 text-xs text-slate-500">
+                {money(row.previousManifoldSales)} →{" "}
+                {money(row.currentManifoldSales)}
+              </div>
+            </div>
+
+            <div className="shrink-0 font-semibold text-emerald-600">
+              +{money(row.manifoldMovement)}
+            </div>
+          </Link>
+        ))}
+      </div>
+    </div>
+  </div>
+
+  {manifoldStoppedCustomers.length > 0 && (
+    <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
+      <div className="mb-3">
+        <h3 className="font-semibold text-slate-900">
+          Stopped Buying Manifolds
+        </h3>
+
+        <p className="text-sm text-slate-600">
+          Customers who bought Manifolds in {previousYear} but have recorded no
+          Manifold sales in {currentYear}.
+        </p>
+      </div>
+
+      <div className="grid gap-2 md:grid-cols-2">
+        {manifoldStoppedCustomers.map((row) => (
+          <Link
+            key={row.id}
+            href={`/commercial/customers/${row.id}?products=none#product-performance`}
+            className="flex items-center justify-between rounded-xl border border-amber-200 bg-white px-4 py-3 transition hover:bg-amber-50"
+          >
+            <span className="min-w-0 truncate font-medium text-slate-900">
+              {row.name}
+            </span>
+
+            <span className="ml-4 shrink-0 text-sm font-semibold text-amber-700">
+              {money(row.previousManifoldSales)}
+            </span>
+          </Link>
+        ))}
+      </div>
+    </div>
+  )}
+</section>
+{/* Controls Intelligence */}
+<section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+  <div className="mb-6">
+    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+      Controls Intelligence
+    </div>
+
+    <h2 className="mt-1 text-xl font-semibold text-slate-900">
+      What is driving the Controls decline?
+    </h2>
+
+    <p className="mt-2 text-sm text-slate-600">
+      Controls sales are down{" "}
+      <span className="font-semibold text-red-600">
+        {money(Math.abs(controlsGroup?.difference ?? 0))}
+      </span>{" "}
+      against the same period last year.
+    </p>
+  </div>
+
+  <div className="grid gap-4 md:grid-cols-4">
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+        {currentYear} YTD
+      </div>
+      <div className="mt-2 text-2xl font-semibold text-slate-900">
+        {money(controlsGroup?.currentSales ?? 0)}
+      </div>
+    </div>
+
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+        {previousYear} YTD
+      </div>
+      <div className="mt-2 text-2xl font-semibold text-slate-900">
+        {money(controlsGroup?.previousSales ?? 0)}
+      </div>
+    </div>
+
+    <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
+      <div className="text-xs font-medium uppercase tracking-wide text-red-600">
+        Movement
+      </div>
+      <div className="mt-2 text-2xl font-semibold text-red-700">
+        {money(controlsGroup?.difference ?? 0)}
+      </div>
+    </div>
+
+    <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
+      <div className="text-xs font-medium uppercase tracking-wide text-red-600">
+        Percentage
+      </div>
+      <div className="mt-2 text-2xl font-semibold text-red-700">
+        {(controlsGroup?.percentage ?? 0).toFixed(1)}%
+      </div>
+    </div>
+  </div>
+
+  <div className="mt-6 grid gap-6 lg:grid-cols-2">
+    <div>
+      <div className="mb-3">
+        <h3 className="font-semibold text-slate-900">
+          Biggest Customer Declines
+        </h3>
+        <p className="text-sm text-slate-500">
+          Customers contributing most to the Controls decline.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        {controlDecliningCustomers.slice(0, 5).map((row) => (
+          <Link
+            key={row.id}
+            href={`/commercial/customers/${row.id}?products=decline#product-performance`}
+            className="flex items-center justify-between rounded-xl border border-red-100 bg-red-50/60 px-4 py-3 transition hover:border-red-200 hover:bg-red-50"
+          >
+            <div className="min-w-0 pr-4">
+              <div className="truncate font-medium text-slate-900">
+                {row.name}
+              </div>
+
+              <div className="mt-1 text-xs text-slate-500">
+                {money(row.previousControlSales)} →{" "}
+                {money(row.currentControlSales)}
+              </div>
+            </div>
+
+            <div className="shrink-0 font-semibold text-red-600">
+              {money(row.controlMovement)}
+            </div>
+          </Link>
+        ))}
+      </div>
+    </div>
+
+    <div>
+      <div className="mb-3">
+        <h3 className="font-semibold text-slate-900">
+          Growth Offsets
+        </h3>
+        <p className="text-sm text-slate-500">
+          Customers helping offset the Controls decline.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        {controlGrowingCustomers.slice(0, 5).map((row) => (
+          <Link
+            key={row.id}
+            href={`/commercial/customers/${row.id}?products=top#product-performance`}
+            className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 transition hover:border-emerald-200 hover:bg-emerald-50"
+          >
+            <div className="min-w-0 pr-4">
+              <div className="truncate font-medium text-slate-900">
+                {row.name}
+              </div>
+
+              <div className="mt-1 text-xs text-slate-500">
+                {money(row.previousControlSales)} →{" "}
+                {money(row.currentControlSales)}
+              </div>
+            </div>
+
+            <div className="shrink-0 font-semibold text-emerald-600">
+              +{money(row.controlMovement)}
+            </div>
+          </Link>
+        ))}
+      </div>
+    </div>
+  </div>
+
+  {controlStoppedCustomers.length > 0 && (
+    <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
+      <div className="mb-3">
+        <h3 className="font-semibold text-slate-900">
+          Stopped Buying Controls
+        </h3>
+
+        <p className="text-sm text-slate-600">
+          Customers who bought Controls in {previousYear} but have recorded no
+          Controls sales in {currentYear}.
+        </p>
+      </div>
+
+      <div className="grid gap-2 md:grid-cols-2">
+        {controlStoppedCustomers.map((row) => (
+          <Link
+            key={row.id}
+            href={`/commercial/customers/${row.id}?products=none#product-performance`}
+            className="flex items-center justify-between rounded-xl border border-amber-200 bg-white px-4 py-3 transition hover:bg-amber-50"
+          >
+            <span className="min-w-0 truncate font-medium text-slate-900">
+              {row.name}
+            </span>
+
+            <span className="ml-4 shrink-0 text-sm font-semibold text-amber-700">
+              {money(row.previousControlSales)}
+            </span>
+          </Link>
+        ))}
+      </div>
+    </div>
+  )}
 </section>
 
 <section className="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white">
@@ -2124,7 +4546,127 @@ const memberTableRows = rows.map((row) => ({
     </table>
   </div>
 </section>
+<section className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm">
+  <div className="border-b border-slate-200 px-6 py-5">
+    <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">
+      Odin Commercial Actions
+    </p>
 
+    <h2 className="mt-1 text-xl font-bold text-slate-950">
+      Meeting Actions
+    </h2>
+
+    <p className="mt-1 text-sm text-slate-500">
+      Priority NBG accounts to discuss and the commercial action to take.
+    </p>
+  </div>
+
+  <div className="grid gap-4 p-6 md:grid-cols-2">
+    {meetingActionGrowthCustomer && (
+      <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+          Protect &amp; Develop
+        </p>
+
+        <p className="mt-2 text-lg font-bold text-slate-950">
+  <Link
+    href={`/commercial/customers/${meetingActionGrowthCustomer.id}?products=top#product-performance`}
+    className="hover:text-amber-600 hover:underline"
+  >
+    {meetingActionGrowthCustomer.name}
+  </Link>
+</p>
+
+        <p className="mt-1 text-sm font-semibold text-emerald-700">
+          +{money(meetingActionGrowthCustomer.movementValue)} YTD growth
+        </p>
+
+        <p className="mt-2 text-sm text-slate-600">
+          Protect the momentum and identify additional product categories
+          that can increase share of wallet.
+        </p>
+      </div>
+    )}
+
+    {meetingActionRecoveryCustomer && (
+      <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-red-700">
+          Recovery Priority
+        </p>
+
+        <p className="mt-2 text-lg font-bold text-slate-950">
+  <Link
+    href={`/commercial/customers/${meetingActionRecoveryCustomer.id}?products=risk#product-performance`}
+    className="hover:text-amber-600 hover:underline"
+  >
+    {meetingActionRecoveryCustomer.name}
+  </Link>
+</p>
+
+        <p className="mt-1 text-sm font-semibold text-red-700">
+          {money(meetingActionRecoveryCustomer.movementValue)} YTD
+        </p>
+
+        <p className="mt-2 text-sm text-slate-600">
+          Understand what has driven the decline and agree a plan to recover
+          lost spend.
+        </p>
+      </div>
+    )}
+
+    {meetingActionWinBackCustomer && (
+      <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+          Win Back
+        </p>
+
+        <p className="mt-2 text-lg font-bold text-slate-950">
+  <Link
+    href={`/commercial/customers/${meetingActionWinBackCustomer.id}?products=risk#product-performance`}
+    className="hover:text-amber-600 hover:underline"
+  >
+    {meetingActionWinBackCustomer.name}
+  </Link>
+</p>
+
+        <p className="mt-1 text-sm font-semibold text-amber-700">
+          {money(meetingActionWinBackCustomer.previousYearSales)} prior-year sales
+        </p>
+
+        <p className="mt-2 text-sm text-slate-600">
+          No sales this year. Establish why purchasing stopped and whether the
+          business can be recovered.
+        </p>
+      </div>
+    )}
+
+    {meetingActionMlcpOpportunity && (
+      <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
+          MLCP Cross-Sell
+        </p>
+
+        <p className="mt-2 text-lg font-bold text-slate-950">
+  <Link
+    href={`/commercial/customers/${meetingActionMlcpOpportunity.id}?products=none#product-performance`}
+    className="hover:text-amber-600 hover:underline"
+  >
+    {meetingActionMlcpOpportunity.name}
+  </Link>
+</p>
+
+        <p className="mt-1 text-sm font-semibold text-indigo-700">
+          {money(meetingActionMlcpOpportunity.currentYearSales)} current Hetta spend
+        </p>
+
+        <p className="mt-2 text-sm text-slate-600">
+          Active NBG customer not currently buying MLCP. Prioritise for
+          range introduction and cross-sell.
+        </p>
+      </div>
+    )}
+  </div>
+</section>
       <BuyingGroupMemberTable
   rows={memberTableRows}
   currentYear={currentYear}
