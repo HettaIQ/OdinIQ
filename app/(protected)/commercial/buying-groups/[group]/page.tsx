@@ -319,6 +319,10 @@ const search = (filters.search ?? "").trim().toLowerCase();
 
   const buyingGroup = decodeURIComponent(group);
 
+const buyingGroupDisplayName = buyingGroup
+  .replace(/\s*-\s*Rebate$/i, "")
+  .trim();
+
   const {
     companyId,
   } = await requireCompanyContext();
@@ -2216,7 +2220,7 @@ const meetingActionMlcpOpportunity =
         </p>
 
         <h1 className="mt-1 text-3xl font-bold text-slate-950">
-          {buyingGroup}
+          {buyingGroupDisplayName}
         </h1>
 
         <p className="mt-2 text-sm text-slate-500">
@@ -2264,11 +2268,11 @@ const meetingActionMlcpOpportunity =
     </p>
 
     <h2 className="mt-1 text-xl font-bold text-slate-950">
-      What is driving {buyingGroup}?
+      What is driving {buyingGroupDisplayName}?
     </h2>
 
     <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
-      {buyingGroup} is currently{" "}
+     {buyingGroupDisplayName} is currently{" "}
       <span
         className={
           totalMovementPercent >= 0
@@ -2366,7 +2370,7 @@ const meetingActionMlcpOpportunity =
     </p>
 
     <h2 className="mt-1 text-xl font-bold text-slate-950">
-      NBG Meeting Brief
+      {buyingGroupDisplayName} Meeting Brief
     </h2>
 
     <p className="mt-1 text-sm text-slate-500">
@@ -2533,7 +2537,7 @@ const meetingActionMlcpOpportunity =
           : rows.length -
             (meetingBriefStrongestCategory?.currentBuyerCount ?? 0)}
       </span>{" "}
-      remaining NBG members.
+      remaining {buyingGroupDisplayName} members.
     </p>
   </div>
 </div>
@@ -2550,7 +2554,7 @@ const meetingActionMlcpOpportunity =
     </h2>
 
     <p className="mt-1 text-sm text-slate-500">
-      Monthly net sales for {buyingGroup}, comparing the same periods year on year.
+      Monthly net sales for {buyingGroupDisplayName}, comparing the same periods year on year.
     </p>
   </div>
 
@@ -2654,7 +2658,7 @@ const meetingActionMlcpOpportunity =
     </p>
 
     <h2 className="mt-1 text-lg font-bold text-slate-950">
-      What is NBG buying?
+      What is {buyingGroupDisplayName} buying?
     </h2>
 
     <p className="mt-1 text-sm text-slate-600">
@@ -2767,8 +2771,7 @@ const meetingActionMlcpOpportunity =
     </h2>
 
     <p className="mt-1 text-sm text-slate-600">
-      MLCP is growing strongly within NBG, but penetration across the
-      membership remains low.
+      MLCP is growing strongly within {buyingGroupDisplayName}, but penetration across the membership remains low.
     </p>
   </div>
 <div className="border-t border-slate-200 p-5">
@@ -2985,7 +2988,7 @@ const meetingActionMlcpOpportunity =
     </p>
 
     <p className="mt-1 text-sm text-slate-600">
-      NBG members contributing the most additional MLCP sales in {currentYear}.
+      {buyingGroupDisplayName} members contributing the most additional MLCP sales in {currentYear}.
     </p>
 
     <div className="mt-4 grid gap-2 md:grid-cols-5">
@@ -3139,7 +3142,7 @@ const meetingActionMlcpOpportunity =
  <MlcpExpandableSection
   id="mlcp-current-buyers"
   title="Current MLCP Buyers"
-  subtitle={`All NBG members buying MLCP in ${currentYear}.`}
+ subtitle={`All ${buyingGroupDisplayName} members buying MLCP in ${currentYear}.`}
   count={mlcpCurrentBuyerRows.length}
 >
   <div className="space-y-2">
@@ -3168,7 +3171,7 @@ const meetingActionMlcpOpportunity =
   </p>
 
   <p className="mt-1 text-sm text-slate-600">
-    Highest-spending NBG members not buying MLCP in {currentYear}.
+    Highest-spending {buyingGroupDisplayName} members not buying MLCP in {currentYear}.
   </p>
 
   <div className="mt-4 space-y-2">
@@ -3203,7 +3206,7 @@ const meetingActionMlcpOpportunity =
       <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
         <tr>
           <th className="px-5 py-3">Rank</th>
-          <th className="px-5 py-3">NBG Member</th>
+          <th className="px-5 py-3">{buyingGroupDisplayName} Member</th>
           <th className="px-5 py-3">
   Opportunity Type
 </th>
@@ -3260,8 +3263,8 @@ const meetingActionMlcpOpportunity =
 </MlcpExpandableSection>
 <MlcpExpandableSection
   id="mlcp-dormant-opportunities"
-  title="Dormant NBG Members"
-  subtitle={`Active NBG members with no Hetta spend in ${currentYear} and not currently buying MLCP.`}
+  title={`Dormant ${buyingGroupDisplayName} Members`}
+subtitle={`Active ${buyingGroupDisplayName} members with no Hetta spend in ${currentYear} and not currently buying MLCP.`}
   count={mlcpDormantOpportunityRows.length}
 >
   <div className="mt-4 overflow-x-auto">
@@ -3269,7 +3272,7 @@ const meetingActionMlcpOpportunity =
       <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
         <tr>
           <th className="px-5 py-3">Rank</th>
-          <th className="px-5 py-3">NBG Member</th>
+          <th className="px-5 py-3">{buyingGroupDisplayName} Member</th>
           <th className="px-5 py-3">Opportunity Type</th>
           <th className="px-5 py-3 text-right">
             {currentYear} Spend
@@ -3336,7 +3339,7 @@ const meetingActionMlcpOpportunity =
     </h2>
 
     <p className="mt-1 text-sm text-slate-500">
-      NBG Floor Systems sales are down {money(Math.abs(floorSystemsGroup?.difference ?? 0))} versus the same period last year.
+      {buyingGroupDisplayName} Floor Systems sales are down {money(Math.abs(floorSystemsGroup?.difference ?? 0))} versus the same period last year.
     </p>
   </div>
 
@@ -3378,8 +3381,8 @@ const meetingActionMlcpOpportunity =
     </p>
 
     <p className="mt-1 text-sm text-slate-500">
-      NBG members contributing most to the Floor Systems sales decline.
-    </p>
+  {buyingGroupDisplayName} members contributing most to the Floor Systems sales decline.
+</p>
 
     <div className="mt-4 space-y-2">
       {floorSystemDecliningCustomers.slice(0, 5).map((row, index) => (
@@ -3419,7 +3422,7 @@ const meetingActionMlcpOpportunity =
   </p>
 
   <p className="mt-1 text-sm text-slate-500">
-    NBG members helping offset the Floor Systems decline.
+    {buyingGroupDisplayName} members helping offset the Floor Systems decline.
   </p>
 
   <div className="mt-4 space-y-2">
@@ -3461,7 +3464,7 @@ const meetingActionMlcpOpportunity =
   </p>
 
   <p className="mt-1 text-sm text-slate-500">
-    NBG members that bought Floor Systems in {previousYear} but have bought none in {currentYear}.
+    {buyingGroupDisplayName} members that bought Floor Systems in {previousYear} but have bought none in {currentYear}.
   </p>
 
   <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -4557,7 +4560,7 @@ const meetingActionMlcpOpportunity =
     </h2>
 
     <p className="mt-1 text-sm text-slate-500">
-      Priority NBG accounts to discuss and the commercial action to take.
+      Priority {buyingGroupDisplayName} accounts to discuss and the commercial action to take.
     </p>
   </div>
 
@@ -4660,8 +4663,8 @@ const meetingActionMlcpOpportunity =
         </p>
 
         <p className="mt-2 text-sm text-slate-600">
-          Active NBG customer not currently buying MLCP. Prioritise for
-          range introduction and cross-sell.
+          Active {buyingGroupDisplayName} customer not currently buying MLCP. Prioritise for
+range introduction and cross-sell.
         </p>
       </div>
     )}
