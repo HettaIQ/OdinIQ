@@ -486,11 +486,11 @@ const customerInvoices = invoices.filter((invoice) => {
       currentYearSales - previousYearSales;
 
     const movementPercent =
-      previousYearSales !== 0
-        ? (movementValue / previousYearSales) * 100
-        : currentYearSales > 0
-        ? 100
-        : 0;
+  previousYearSales !== 0
+    ? (movementValue / Math.abs(previousYearSales)) * 100
+    : currentYearSales > 0
+    ? 100
+    : 0;
 
     let trend: "GROWING" | "DECLINING" | "FLAT" | "NO SALES";
 
@@ -1395,7 +1395,43 @@ const mlcpCustomerGrowthDrivers =
     .filter((row) => row.mlcpGrowth > 0)
     .sort((a, b) => b.mlcpGrowth - a.mlcpGrowth)
     .slice(0, 5);
+const mlcpCustomerDeclineDrivers =
+  rows
+    .map((row) => {
+      const customerProductSales =
+        nbgCustomerProductSales.get(String(row.id));
 
+      const currentMlcpSales =
+        mlcpProducts.reduce(
+          (total, product) =>
+            total +
+            (customerProductSales?.current.get(
+              normaliseProductCode(product.code)
+            ) ?? 0),
+          0
+        );
+
+      const previousMlcpSales =
+        mlcpProducts.reduce(
+          (total, product) =>
+            total +
+            (customerProductSales?.previous.get(
+              normaliseProductCode(product.code)
+            ) ?? 0),
+          0
+        );
+
+      return {
+        ...row,
+        currentMlcpSales,
+        previousMlcpSales,
+        mlcpGrowth:
+          currentMlcpSales - previousMlcpSales,
+      };
+    })
+    .filter((row) => row.mlcpGrowth < 0)
+    .sort((a, b) => a.mlcpGrowth - b.mlcpGrowth)
+    .slice(0, 5);
 
 const mlcpCustomerSalesReconciliation =
   [...nbgCustomerProductSales.values()].reduce(
@@ -1662,7 +1698,158 @@ const accessoryStoppedCustomers =
         b.previousAccessorySales -
         a.previousAccessorySales
     );
+const toolsGroup =
+  nbgProductGroupPerformance.find(
+    (group) => group.group === "TOOLS"
+  );
 
+const toolProducts =
+  nbgProductPerformance.filter(
+    (product) =>
+      classifyProduct(
+        product.code,
+        product.description
+      ) === "TOOLS"
+  );
+
+const toolCustomerPerformance =
+  rows.map((row) => {
+    const customerProductSales =
+      nbgCustomerProductSales.get(String(row.id));
+
+    const currentToolSales =
+      toolProducts.reduce(
+        (total, product) =>
+          total +
+          (customerProductSales?.current.get(
+            normaliseProductCode(product.code)
+          ) ?? 0),
+        0
+      );
+
+    const previousToolSales =
+      toolProducts.reduce(
+        (total, product) =>
+          total +
+          (customerProductSales?.previous.get(
+            normaliseProductCode(product.code)
+          ) ?? 0),
+        0
+      );
+
+    return {
+      ...row,
+      currentToolSales,
+      previousToolSales,
+      toolMovement:
+        currentToolSales - previousToolSales,
+    };
+  });
+
+const toolDecliningCustomers =
+  toolCustomerPerformance
+    .filter((row) => row.toolMovement < 0)
+    .sort(
+      (a, b) =>
+        a.toolMovement - b.toolMovement
+    );
+
+const toolGrowingCustomers =
+  toolCustomerPerformance
+    .filter((row) => row.toolMovement > 0)
+    .sort(
+      (a, b) =>
+        b.toolMovement - a.toolMovement
+    );
+
+const toolStoppedCustomers =
+  toolCustomerPerformance
+    .filter(
+      (row) =>
+        row.previousToolSales > 0 &&
+        row.currentToolSales === 0
+    )
+    .sort(
+      (a, b) =>
+        b.previousToolSales -
+        a.previousToolSales
+    );
+    const pumpsGroup =
+  nbgProductGroupPerformance.find(
+    (group) => group.group === "PUMPS"
+  );
+
+const pumpProducts =
+  nbgProductPerformance.filter(
+    (product) =>
+      classifyProduct(
+        product.code,
+        product.description
+      ) === "PUMPS"
+  );
+
+const pumpCustomerPerformance =
+  rows.map((row) => {
+    const customerProductSales =
+      nbgCustomerProductSales.get(String(row.id));
+
+    const currentPumpSales =
+      pumpProducts.reduce(
+        (total, product) =>
+          total +
+          (customerProductSales?.current.get(
+            normaliseProductCode(product.code)
+          ) ?? 0),
+        0
+      );
+
+    const previousPumpSales =
+      pumpProducts.reduce(
+        (total, product) =>
+          total +
+          (customerProductSales?.previous.get(
+            normaliseProductCode(product.code)
+          ) ?? 0),
+        0
+      );
+
+    return {
+      ...row,
+      currentPumpSales,
+      previousPumpSales,
+      pumpMovement:
+        currentPumpSales - previousPumpSales,
+    };
+  });
+
+const pumpDecliningCustomers =
+  pumpCustomerPerformance
+    .filter((row) => row.pumpMovement < 0)
+    .sort(
+      (a, b) =>
+        a.pumpMovement - b.pumpMovement
+    );
+
+const pumpGrowingCustomers =
+  pumpCustomerPerformance
+    .filter((row) => row.pumpMovement > 0)
+    .sort(
+      (a, b) =>
+        b.pumpMovement - a.pumpMovement
+    );
+
+const pumpStoppedCustomers =
+  pumpCustomerPerformance
+    .filter(
+      (row) =>
+        row.previousPumpSales > 0 &&
+        row.currentPumpSales === 0
+    )
+    .sort(
+      (a, b) =>
+        b.previousPumpSales -
+        a.previousPumpSales
+    );
 // NBG Meeting Brief
 const meetingBriefGrowthCustomers = [...rows]
   .filter((row) => row.movementValue > 0)
@@ -2767,20 +2954,27 @@ const meetingActionMlcpOpportunity =
     </p>
 
     <h2 className="mt-1 text-lg font-bold text-slate-950">
-      MLCP Growth & Opportunity
-    </h2>
+  {(mlcpGroup?.difference ?? 0) >= 0
+    ? "MLCP Growth & Opportunity"
+    : "MLCP Performance & Opportunity"}
+</h2>
 
-    <p className="mt-1 text-sm text-slate-600">
-      MLCP is growing strongly within {buyingGroupDisplayName}, but penetration across the membership remains low.
-    </p>
-  </div>
+<p className="mt-1 text-sm text-slate-600">
+  {(mlcpGroup?.difference ?? 0) >= 0
+    ? `MLCP is growing strongly within ${buyingGroupDisplayName}, but penetration across the membership remains low.`
+    : `MLCP sales are declining within ${buyingGroupDisplayName}, while low penetration across the membership leaves significant recovery and cross-sell opportunity.`}
+</p>
+</div>
+
 <div className="border-t border-slate-200 p-5">
   <p className="text-xs font-semibold uppercase tracking-wide text-amber-600">
     MLCP Product Intelligence
   </p>
 
   <h3 className="mt-1 text-lg font-bold text-slate-950">
-    What is driving MLCP growth?
+    {(mlcpGroup?.difference ?? 0) >= 0
+      ? "What is driving MLCP growth?"
+      : "What is driving the MLCP decline?"}
   </h3>
 
   <div className="mt-4 grid gap-4 md:grid-cols-3">
@@ -2982,40 +3176,77 @@ const meetingActionMlcpOpportunity =
 </div>
 </div>
 <div className="px-5 pb-5">
-  <div className="rounded-lg border border-emerald-200 p-4">
-    <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-      MLCP Customer Growth Drivers
-    </p>
+  {(mlcpGroup?.difference ?? 0) >= 0 ? (
+    <div className="rounded-lg border border-emerald-200 p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+        MLCP Customer Growth Drivers
+      </p>
 
-    <p className="mt-1 text-sm text-slate-600">
-      {buyingGroupDisplayName} members contributing the most additional MLCP sales in {currentYear}.
-    </p>
+      <p className="mt-1 text-sm text-slate-600">
+        {buyingGroupDisplayName} members contributing the most additional MLCP sales in {currentYear}.
+      </p>
 
-    <div className="mt-4 grid gap-2 md:grid-cols-5">
-      {mlcpCustomerGrowthDrivers.map((row, index) => (
-        <div
-          key={row.id}
-          className="rounded-lg bg-emerald-50 px-3 py-3"
-        >
-          <p className="text-xs text-slate-500">
-            #{index + 1}
-          </p>
+      <div className="mt-4 grid gap-2 md:grid-cols-5">
+        {mlcpCustomerGrowthDrivers.map((row, index) => (
+          <div
+            key={row.id}
+            className="rounded-lg bg-emerald-50 px-3 py-3"
+          >
+            <p className="text-xs text-slate-500">
+              #{index + 1}
+            </p>
 
-          <p className="mt-1 truncate text-sm font-semibold text-slate-900">
-            {row.name}
-          </p>
+            <p className="mt-1 truncate text-sm font-semibold text-slate-900">
+              {row.name}
+            </p>
 
-          <p className="mt-2 text-sm font-bold text-slate-900">
-            {money(row.currentMlcpSales)}
-          </p>
+            <p className="mt-2 text-sm font-bold text-slate-900">
+              {money(row.currentMlcpSales)}
+            </p>
 
-          <p className="text-xs font-semibold text-emerald-700">
-            +{money(row.mlcpGrowth)}
-          </p>
-        </div>
-      ))}
+            <p className="text-xs font-semibold text-emerald-700">
+              +{money(row.mlcpGrowth)}
+            </p>
+          </div>
+        ))}
+      </div>
     </div>
-  </div>
+  ) : (
+    <div className="rounded-lg border border-red-200 p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-red-700">
+        MLCP Customer Decline Drivers
+      </p>
+
+      <p className="mt-1 text-sm text-slate-600">
+        {buyingGroupDisplayName} members contributing the largest MLCP sales declines versus {previousYear}.
+      </p>
+
+      <div className="mt-4 grid gap-2 md:grid-cols-5">
+        {mlcpCustomerDeclineDrivers.map((row, index) => (
+          <div
+            key={row.id}
+            className="rounded-lg bg-red-50 px-3 py-3"
+          >
+            <p className="text-xs text-slate-500">
+              #{index + 1}
+            </p>
+
+            <p className="mt-1 truncate text-sm font-semibold text-slate-900">
+              {row.name}
+            </p>
+
+            <p className="mt-2 text-sm font-bold text-slate-900">
+              {money(row.currentMlcpSales)}
+            </p>
+
+            <p className="text-xs font-semibold text-red-700">
+              {money(row.mlcpGrowth)}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  )}
 </div>
   <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-5">
     <div className="rounded-lg bg-slate-50 p-4">
@@ -3330,17 +3561,36 @@ subtitle={`Active ${buyingGroupDisplayName} members with no Hetta spend in ${cur
 </section>
 <section className="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white">
   <div className="border-b border-slate-200 px-5 py-4">
-    <p className="text-xs font-semibold uppercase tracking-wide text-red-600">
-      Floor Systems Intelligence
-    </p>
+    <p
+  className={`text-xs font-semibold uppercase tracking-wide ${
+    (floorSystemsGroup?.difference ?? 0) >= 0
+      ? "text-emerald-600"
+      : "text-red-600"
+  }`}
+>
+  Floor Systems Intelligence
+</p>
 
-    <h2 className="mt-1 text-lg font-bold text-slate-950">
-      What is driving the Floor Systems decline?
-    </h2>
+<h2 className="mt-1 text-lg font-bold text-slate-950">
+  {(floorSystemsGroup?.difference ?? 0) >= 0
+    ? "What is driving Floor Systems growth?"
+    : "What is driving the Floor Systems decline?"}
+</h2>
 
-    <p className="mt-1 text-sm text-slate-500">
-      {buyingGroupDisplayName} Floor Systems sales are down {money(Math.abs(floorSystemsGroup?.difference ?? 0))} versus the same period last year.
-    </p>
+<p className="mt-1 text-sm text-slate-500">
+  {buyingGroupDisplayName} Floor Systems sales are{" "}
+  <span
+    className={
+      (floorSystemsGroup?.difference ?? 0) >= 0
+        ? "font-semibold text-emerald-600"
+        : "font-semibold text-red-600"
+    }
+  >
+    {(floorSystemsGroup?.difference ?? 0) >= 0 ? "up " : "down "}
+    {money(Math.abs(floorSystemsGroup?.difference ?? 0))}
+  </span>{" "}
+  versus the same period last year.
+</p>
   </div>
 
   <div className="grid gap-4 border-b border-slate-200 p-5 md:grid-cols-3">
@@ -3362,102 +3612,220 @@ subtitle={`Active ${buyingGroupDisplayName} members with no Hetta spend in ${cur
       </p>
     </div>
 
-    <div className="rounded-lg bg-red-50 p-4">
-      <p className="text-xs font-semibold uppercase tracking-wide text-red-700">
-        Movement
-      </p>
-      <p className="mt-2 text-2xl font-bold text-red-700">
-        -{money(Math.abs(floorSystemsGroup?.difference ?? 0))}
-      </p>
-      <p className="mt-1 text-xs text-red-700">
-       {(floorSystemsGroup?.percentage ?? 0).toFixed(1)}%
-      </p>
-    </div>
-  </div>
-
-  <div className="p-5">
-    <p className="text-xs font-semibold uppercase tracking-wide text-red-600">
-      Biggest Customer Declines
-    </p>
-
-    <p className="mt-1 text-sm text-slate-500">
-  {buyingGroupDisplayName} members contributing most to the Floor Systems sales decline.
-</p>
-
-    <div className="mt-4 space-y-2">
-      {floorSystemDecliningCustomers.slice(0, 5).map((row, index) => (
-        <div
-          key={row.id}
-          className="flex items-center justify-between rounded-lg bg-red-50 px-4 py-3"
-        >
-          <div>
-            <span className="mr-3 text-sm text-slate-500">
-              #{index + 1}
-            </span>
-
-            <Link
-              href={`/commercial/customers/${row.id}`}
-              className="font-semibold text-slate-950 hover:text-blue-700 hover:underline"
-            >
-              {row.name}
-            </Link>
-          </div>
-
-          <div className="text-right">
-            <p className="font-bold text-red-700">
-              {money(row.floorSystemMovement)}
-            </p>
-            <p className="text-xs text-slate-500">
-              {money(row.previousFloorSystemSales)} →{" "}
-              {money(row.currentFloorSystemSales)}
-            </p>
-          </div>
-        </div>
-      ))}
-    </div>
-  </div>
-  <div className="border-t border-slate-200 p-5">
-  <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-    Growth Offsets
+    <div
+  className={`rounded-lg p-4 ${
+    (floorSystemsGroup?.difference ?? 0) >= 0
+      ? "bg-emerald-50"
+      : "bg-red-50"
+  }`}
+>
+  <p
+    className={`text-xs font-semibold uppercase tracking-wide ${
+      (floorSystemsGroup?.difference ?? 0) >= 0
+        ? "text-emerald-700"
+        : "text-red-700"
+    }`}
+  >
+  Movement
   </p>
 
-  <p className="mt-1 text-sm text-slate-500">
-    {buyingGroupDisplayName} members helping offset the Floor Systems decline.
+  <p
+    className={`mt-2 text-2xl font-bold ${
+      (floorSystemsGroup?.difference ?? 0) >= 0
+        ? "text-emerald-700"
+        : "text-red-700"
+    }`}
+  >
+    {(floorSystemsGroup?.difference ?? 0) >= 0 ? "+" : ""}
+    {money(floorSystemsGroup?.difference ?? 0)}
   </p>
 
-  <div className="mt-4 space-y-2">
-    {floorSystemGrowingCustomers.slice(0, 5).map((row, index) => (
-      <div
-        key={row.id}
-        className="flex items-center justify-between rounded-lg bg-emerald-50 px-4 py-3"
-      >
-        <div>
-          <span className="mr-3 text-sm text-slate-500">
-            #{index + 1}
-          </span>
-
-          <Link
-            href={`/commercial/customers/${row.id}`}
-            className="font-semibold text-slate-950 hover:text-blue-700 hover:underline"
-          >
-            {row.name}
-          </Link>
-        </div>
-
-        <div className="text-right">
-          <p className="font-bold text-emerald-700">
-            +{money(row.floorSystemMovement)}
-          </p>
-
-          <p className="text-xs text-slate-500">
-            {money(row.previousFloorSystemSales)} →{" "}
-            {money(row.currentFloorSystemSales)}
-          </p>
-        </div>
-      </div>
-    ))}
-  </div>
+  <p
+    className={`mt-1 text-xs ${
+      (floorSystemsGroup?.percentage ?? 0) >= 0
+        ? "text-emerald-700"
+        : "text-red-700"
+    }`}
+  >
+    {(floorSystemsGroup?.percentage ?? 0) >= 0 ? "+" : ""}
+    {(floorSystemsGroup?.percentage ?? 0).toFixed(1)}%
+  </p>
 </div>
+</div>
+
+{(floorSystemsGroup?.difference ?? 0) >= 0 ? (
+  <>
+    <div className="p-5">
+      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+        Biggest Growth Contributors
+      </p>
+
+      <p className="mt-1 text-sm text-slate-500">
+        {buyingGroupDisplayName} members contributing most to Floor Systems growth.
+      </p>
+
+      <div className="mt-4 space-y-2">
+        {floorSystemGrowingCustomers.slice(0, 5).map((row, index) => (
+          <div
+            key={row.id}
+            className="flex items-center justify-between rounded-lg bg-emerald-50 px-4 py-3"
+          >
+            <div>
+              <span className="mr-3 text-sm text-slate-500">
+                #{index + 1}
+              </span>
+
+              <Link
+                href={`/commercial/customers/${row.id}`}
+                className="font-semibold text-slate-950 hover:text-blue-700 hover:underline"
+              >
+                {row.name}
+              </Link>
+            </div>
+
+            <div className="text-right">
+              <p className="font-bold text-emerald-700">
+                +{money(row.floorSystemMovement)}
+              </p>
+              <p className="text-xs text-slate-500">
+                {money(row.previousFloorSystemSales)} →{" "}
+                {money(row.currentFloorSystemSales)}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <div className="border-t border-slate-200 p-5">
+      <p className="text-xs font-semibold uppercase tracking-wide text-red-600">
+        Biggest Customer Declines
+      </p>
+
+      <p className="mt-1 text-sm text-slate-500">
+        {buyingGroupDisplayName} members offsetting some of the Floor Systems growth.
+      </p>
+
+      <div className="mt-4 space-y-2">
+        {floorSystemDecliningCustomers.slice(0, 5).map((row, index) => (
+          <div
+            key={row.id}
+            className="flex items-center justify-between rounded-lg bg-red-50 px-4 py-3"
+          >
+            <div>
+              <span className="mr-3 text-sm text-slate-500">
+                #{index + 1}
+              </span>
+
+              <Link
+                href={`/commercial/customers/${row.id}`}
+                className="font-semibold text-slate-950 hover:text-blue-700 hover:underline"
+              >
+                {row.name}
+              </Link>
+            </div>
+
+            <div className="text-right">
+              <p className="font-bold text-red-700">
+                {money(row.floorSystemMovement)}
+              </p>
+              <p className="text-xs text-slate-500">
+                {money(row.previousFloorSystemSales)} →{" "}
+                {money(row.currentFloorSystemSales)}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </>
+) : (
+  <>
+    <div className="p-5">
+      <p className="text-xs font-semibold uppercase tracking-wide text-red-600">
+        Biggest Customer Declines
+      </p>
+
+      <p className="mt-1 text-sm text-slate-500">
+        {buyingGroupDisplayName} members contributing most to the Floor Systems sales decline.
+      </p>
+
+      <div className="mt-4 space-y-2">
+        {floorSystemDecliningCustomers.slice(0, 5).map((row, index) => (
+          <div
+            key={row.id}
+            className="flex items-center justify-between rounded-lg bg-red-50 px-4 py-3"
+          >
+            <div>
+              <span className="mr-3 text-sm text-slate-500">
+                #{index + 1}
+              </span>
+
+              <Link
+                href={`/commercial/customers/${row.id}`}
+                className="font-semibold text-slate-950 hover:text-blue-700 hover:underline"
+              >
+                {row.name}
+              </Link>
+            </div>
+
+            <div className="text-right">
+              <p className="font-bold text-red-700">
+                {money(row.floorSystemMovement)}
+              </p>
+              <p className="text-xs text-slate-500">
+                {money(row.previousFloorSystemSales)} →{" "}
+                {money(row.currentFloorSystemSales)}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <div className="border-t border-slate-200 p-5">
+      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+        Growth Offsets
+      </p>
+
+      <p className="mt-1 text-sm text-slate-500">
+        {buyingGroupDisplayName} members helping offset the Floor Systems decline.
+      </p>
+
+      <div className="mt-4 space-y-2">
+        {floorSystemGrowingCustomers.slice(0, 5).map((row, index) => (
+          <div
+            key={row.id}
+            className="flex items-center justify-between rounded-lg bg-emerald-50 px-4 py-3"
+          >
+            <div>
+              <span className="mr-3 text-sm text-slate-500">
+                #{index + 1}
+              </span>
+
+              <Link
+                href={`/commercial/customers/${row.id}`}
+                className="font-semibold text-slate-950 hover:text-blue-700 hover:underline"
+              >
+                {row.name}
+              </Link>
+            </div>
+
+            <div className="text-right">
+              <p className="font-bold text-emerald-700">
+                +{money(row.floorSystemMovement)}
+              </p>
+              <p className="text-xs text-slate-500">
+                {money(row.previousFloorSystemSales)} →{" "}
+                {money(row.currentFloorSystemSales)}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </>
+)}
 <div className="border-t border-slate-200 p-5">
   <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
     Stopped Buying Floor Systems
@@ -3501,8 +3869,10 @@ subtitle={`Active ${buyingGroupDisplayName} members with no Hetta spend in ${cur
     </div>
 
     <h2 className="mt-1 text-xl font-semibold text-slate-900">
-      What is driving Electric UFH growth?
-    </h2>
+  {(electricUfhGroup?.difference ?? 0) >= 0
+    ? "What is driving Electric UFH growth?"
+    : "What is driving the Electric UFH decline?"}
+</h2>
 
     <p className="mt-2 text-sm text-slate-600">
       Electric UFH sales are{" "}
@@ -3596,6 +3966,7 @@ subtitle={`Active ${buyingGroupDisplayName} members with no Hetta spend in ${cur
     </div>
   </div>
 
+ {(electricUfhGroup?.difference ?? 0) >= 0 ? (
   <div className="mt-6 grid gap-6 lg:grid-cols-2">
     <div>
       <div className="mb-3">
@@ -3654,11 +4025,11 @@ subtitle={`Active ${buyingGroupDisplayName} members with no Hetta spend in ${cur
                 {row.name}
               </div>
               <div className="mt-1 text-xs text-slate-500">
-  {money(row.previousElectricUfhSales)} →{" "}
-  {row.currentElectricUfhSales < 0
-    ? `NET CREDIT ${money(Math.abs(row.currentElectricUfhSales))}`
-    : money(row.currentElectricUfhSales)}
-</div>
+                {money(row.previousElectricUfhSales)} →{" "}
+                {row.currentElectricUfhSales < 0
+                  ? `NET CREDIT ${money(Math.abs(row.currentElectricUfhSales))}`
+                  : money(row.currentElectricUfhSales)}
+              </div>
             </div>
 
             <div className="shrink-0 font-semibold text-red-600">
@@ -3669,6 +4040,81 @@ subtitle={`Active ${buyingGroupDisplayName} members with no Hetta spend in ${cur
       </div>
     </div>
   </div>
+) : (
+  <div className="mt-6 grid gap-6 lg:grid-cols-2">
+    <div>
+      <div className="mb-3">
+        <h3 className="font-semibold text-slate-900">
+          Biggest Customer Declines
+        </h3>
+        <p className="text-sm text-slate-500">
+          Customers contributing most to the Electric UFH decline.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        {electricUfhDecliningCustomers.slice(0, 5).map((row) => (
+          <Link
+            key={row.id}
+            href={`/commercial/customers/${row.id}?products=decline#product-performance`}
+            className="flex items-center justify-between rounded-xl border border-red-100 bg-red-50/60 px-4 py-3 transition hover:border-red-200 hover:bg-red-50"
+          >
+            <div className="min-w-0 pr-4">
+              <div className="truncate font-medium text-slate-900">
+                {row.name}
+              </div>
+              <div className="mt-1 text-xs text-slate-500">
+                {money(row.previousElectricUfhSales)} →{" "}
+                {row.currentElectricUfhSales < 0
+                  ? `NET CREDIT ${money(Math.abs(row.currentElectricUfhSales))}`
+                  : money(row.currentElectricUfhSales)}
+              </div>
+            </div>
+
+            <div className="shrink-0 font-semibold text-red-600">
+              {money(row.electricUfhMovement)}
+            </div>
+          </Link>
+        ))}
+      </div>
+    </div>
+
+    <div>
+      <div className="mb-3">
+        <h3 className="font-semibold text-slate-900">
+          Growth Offsets
+        </h3>
+        <p className="text-sm text-slate-500">
+          Customers helping offset the Electric UFH decline.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        {electricUfhGrowingCustomers.slice(0, 5).map((row) => (
+          <Link
+            key={row.id}
+            href={`/commercial/customers/${row.id}?products=top#product-performance`}
+            className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 transition hover:border-emerald-200 hover:bg-emerald-50"
+          >
+            <div className="min-w-0 pr-4">
+              <div className="truncate font-medium text-slate-900">
+                {row.name}
+              </div>
+              <div className="mt-1 text-xs text-slate-500">
+                {money(row.previousElectricUfhSales)} →{" "}
+                {money(row.currentElectricUfhSales)}
+              </div>
+            </div>
+
+            <div className="shrink-0 font-semibold text-emerald-600">
+              +{money(row.electricUfhMovement)}
+            </div>
+          </Link>
+        ))}
+      </div>
+    </div>
+  </div>
+)}
 
   {electricUfhStoppedCustomers.length > 0 && (
     <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
@@ -3709,17 +4155,26 @@ subtitle={`Active ${buyingGroupDisplayName} members with no Hetta spend in ${cur
       Accessories Intelligence
     </div>
 
-    <h2 className="mt-1 text-xl font-semibold text-slate-900">
-      What is driving the Accessories decline?
-    </h2>
+   <h2 className="mt-1 text-xl font-semibold text-slate-900">
+  {(accessoriesGroup?.difference ?? 0) >= 0
+    ? "What is driving Accessories growth?"
+    : "What is driving the Accessories decline?"}
+</h2>
 
-    <p className="mt-2 text-sm text-slate-600">
-      Accessories sales are down{" "}
-      <span className="font-semibold text-red-600">
-        {money(Math.abs(accessoriesGroup?.difference ?? 0))}
-      </span>{" "}
-      against the same period last year.
-    </p>
+<p className="mt-2 text-sm text-slate-600">
+  Accessories sales are{" "}
+  <span
+    className={
+      (accessoriesGroup?.difference ?? 0) >= 0
+        ? "font-semibold text-emerald-600"
+        : "font-semibold text-red-600"
+    }
+  >
+    {(accessoriesGroup?.difference ?? 0) >= 0 ? "up " : "down "}
+    {money(Math.abs(accessoriesGroup?.difference ?? 0))}
+  </span>{" "}
+  against the same period last year.
+</p>
   </div>
 
   <div className="grid gap-4 md:grid-cols-4">
@@ -3741,96 +4196,213 @@ subtitle={`Active ${buyingGroupDisplayName} members with no Hetta spend in ${cur
       </div>
     </div>
 
-    <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
-      <div className="text-xs font-medium uppercase tracking-wide text-red-600">
-        Movement
-      </div>
-      <div className="mt-2 text-2xl font-semibold text-red-700">
-        {money(accessoriesGroup?.difference ?? 0)}
-      </div>
-    </div>
-
-    <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
-      <div className="text-xs font-medium uppercase tracking-wide text-red-600">
-        Percentage
-      </div>
-      <div className="mt-2 text-2xl font-semibold text-red-700">
-        {(accessoriesGroup?.percentage ?? 0).toFixed(1)}%
-      </div>
-    </div>
+    <div
+  className={`rounded-2xl border p-4 ${
+    (accessoriesGroup?.difference ?? 0) >= 0
+      ? "border-emerald-200 bg-emerald-50"
+      : "border-red-200 bg-red-50"
+  }`}
+>
+  <div
+    className={`text-xs font-medium uppercase tracking-wide ${
+      (accessoriesGroup?.difference ?? 0) >= 0
+        ? "text-emerald-600"
+        : "text-red-600"
+    }`}
+  >
+    Movement
   </div>
 
-  <div className="mt-6 grid gap-6 lg:grid-cols-2">
-    <div>
-      <div className="mb-3">
-        <h3 className="font-semibold text-slate-900">
-          Biggest Customer Declines
-        </h3>
-        <p className="text-sm text-slate-500">
-          Customers contributing most to the Accessories decline.
-        </p>
-      </div>
-
-      <div className="space-y-2">
-        {accessoryDecliningCustomers.slice(0, 5).map((row) => (
-          <Link
-            key={row.id}
-            href={`/commercial/customers/${row.id}?products=decline#product-performance`}
-            className="flex items-center justify-between rounded-xl border border-red-100 bg-red-50/60 px-4 py-3 transition hover:border-red-200 hover:bg-red-50"
-          >
-            <div className="min-w-0 pr-4">
-              <div className="truncate font-medium text-slate-900">
-                {row.name}
-              </div>
-              <div className="mt-1 text-xs text-slate-500">
-                {money(row.previousAccessorySales)} →{" "}
-                {money(row.currentAccessorySales)}
-              </div>
-            </div>
-
-            <div className="shrink-0 font-semibold text-red-600">
-              {money(row.accessoryMovement)}
-            </div>
-          </Link>
-        ))}
-      </div>
-    </div>
-
-    <div>
-      <div className="mb-3">
-        <h3 className="font-semibold text-slate-900">
-          Growth Offsets
-        </h3>
-        <p className="text-sm text-slate-500">
-          Customers helping offset the Accessories decline.
-        </p>
-      </div>
-
-      <div className="space-y-2">
-        {accessoryGrowingCustomers.slice(0, 5).map((row) => (
-          <Link
-            key={row.id}
-            href={`/commercial/customers/${row.id}?products=top#product-performance`}
-            className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 transition hover:border-emerald-200 hover:bg-emerald-50"
-          >
-            <div className="min-w-0 pr-4">
-              <div className="truncate font-medium text-slate-900">
-                {row.name}
-              </div>
-              <div className="mt-1 text-xs text-slate-500">
-                {money(row.previousAccessorySales)} →{" "}
-                {money(row.currentAccessorySales)}
-              </div>
-            </div>
-
-            <div className="shrink-0 font-semibold text-emerald-600">
-              +{money(row.accessoryMovement)}
-            </div>
-          </Link>
-        ))}
-      </div>
-    </div>
+  <div
+    className={`mt-2 text-2xl font-semibold ${
+      (accessoriesGroup?.difference ?? 0) >= 0
+        ? "text-emerald-700"
+        : "text-red-700"
+    }`}
+  >
+    {(accessoriesGroup?.difference ?? 0) >= 0 ? "+" : ""}
+    {money(accessoriesGroup?.difference ?? 0)}
   </div>
+</div>
+
+<div
+  className={`rounded-2xl border p-4 ${
+    (accessoriesGroup?.percentage ?? 0) >= 0
+      ? "border-emerald-200 bg-emerald-50"
+      : "border-red-200 bg-red-50"
+  }`}
+>
+  <div
+    className={`text-xs font-medium uppercase tracking-wide ${
+      (accessoriesGroup?.percentage ?? 0) >= 0
+        ? "text-emerald-600"
+        : "text-red-600"
+    }`}
+  >
+    Percentage
+  </div>
+
+  <div
+    className={`mt-2 text-2xl font-semibold ${
+      (accessoriesGroup?.percentage ?? 0) >= 0
+        ? "text-emerald-700"
+        : "text-red-700"
+    }`}
+  >
+    {(accessoriesGroup?.percentage ?? 0) >= 0 ? "+" : ""}
+    {(accessoriesGroup?.percentage ?? 0).toFixed(1)}%
+  </div>
+</div>
+
+</div>
+
+ <div className="mt-6 grid gap-6 lg:grid-cols-2">
+  {(accessoriesGroup?.difference ?? 0) >= 0 ? (
+    <>
+      <div>
+        <div className="mb-3">
+          <h3 className="font-semibold text-slate-900">
+            Biggest Growth Contributors
+          </h3>
+          <p className="text-sm text-slate-500">
+            Customers contributing most to Accessories growth.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          {accessoryGrowingCustomers.slice(0, 5).map((row) => (
+            <Link
+              key={row.id}
+              href={`/commercial/customers/${row.id}?products=top#product-performance`}
+              className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 transition hover:border-emerald-200 hover:bg-emerald-50"
+            >
+              <div className="min-w-0 pr-4">
+                <div className="truncate font-medium text-slate-900">
+                  {row.name}
+                </div>
+                <div className="mt-1 text-xs text-slate-500">
+                  {money(row.previousAccessorySales)} →{" "}
+                  {money(row.currentAccessorySales)}
+                </div>
+              </div>
+
+              <div className="shrink-0 font-semibold text-emerald-600">
+                +{money(row.accessoryMovement)}
+              </div>
+            </Link>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <div className="mb-3">
+          <h3 className="font-semibold text-slate-900">
+            Biggest Customer Declines
+          </h3>
+          <p className="text-sm text-slate-500">
+            Customers offsetting some of the Accessories growth.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          {accessoryDecliningCustomers.slice(0, 5).map((row) => (
+            <Link
+              key={row.id}
+              href={`/commercial/customers/${row.id}?products=decline#product-performance`}
+              className="flex items-center justify-between rounded-xl border border-red-100 bg-red-50/60 px-4 py-3 transition hover:border-red-200 hover:bg-red-50"
+            >
+              <div className="min-w-0 pr-4">
+                <div className="truncate font-medium text-slate-900">
+                  {row.name}
+                </div>
+                <div className="mt-1 text-xs text-slate-500">
+                  {money(row.previousAccessorySales)} →{" "}
+                  {money(row.currentAccessorySales)}
+                </div>
+              </div>
+
+              <div className="shrink-0 font-semibold text-red-600">
+                {money(row.accessoryMovement)}
+              </div>
+            </Link>
+          ))}
+        </div>
+      </div>
+    </>
+  ) : (
+    <>
+      <div>
+        <div className="mb-3">
+          <h3 className="font-semibold text-slate-900">
+            Biggest Customer Declines
+          </h3>
+          <p className="text-sm text-slate-500">
+            Customers contributing most to the Accessories decline.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          {accessoryDecliningCustomers.slice(0, 5).map((row) => (
+            <Link
+              key={row.id}
+              href={`/commercial/customers/${row.id}?products=decline#product-performance`}
+              className="flex items-center justify-between rounded-xl border border-red-100 bg-red-50/60 px-4 py-3 transition hover:border-red-200 hover:bg-red-50"
+            >
+              <div className="min-w-0 pr-4">
+                <div className="truncate font-medium text-slate-900">
+                  {row.name}
+                </div>
+                <div className="mt-1 text-xs text-slate-500">
+                  {money(row.previousAccessorySales)} →{" "}
+                  {money(row.currentAccessorySales)}
+                </div>
+              </div>
+
+              <div className="shrink-0 font-semibold text-red-600">
+                {money(row.accessoryMovement)}
+              </div>
+            </Link>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <div className="mb-3">
+          <h3 className="font-semibold text-slate-900">
+            Growth Offsets
+          </h3>
+          <p className="text-sm text-slate-500">
+            Customers helping offset the Accessories decline.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          {accessoryGrowingCustomers.slice(0, 5).map((row) => (
+            <Link
+              key={row.id}
+              href={`/commercial/customers/${row.id}?products=top#product-performance`}
+              className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 transition hover:border-emerald-200 hover:bg-emerald-50"
+            >
+              <div className="min-w-0 pr-4">
+                <div className="truncate font-medium text-slate-900">
+                  {row.name}
+                </div>
+                <div className="mt-1 text-xs text-slate-500">
+                  {money(row.previousAccessorySales)} →{" "}
+                  {money(row.currentAccessorySales)}
+                </div>
+              </div>
+
+              <div className="shrink-0 font-semibold text-emerald-600">
+                +{money(row.accessoryMovement)}
+              </div>
+            </Link>
+          ))}
+        </div>
+      </div>
+    </>
+  )}
+</div>
 
   {accessoryStoppedCustomers.length > 0 && (
     <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
@@ -3864,6 +4436,578 @@ subtitle={`Active ${buyingGroupDisplayName} members with no Hetta spend in ${cur
     </div>
   )}
 </section>
+{/* Tools Intelligence */}
+<section className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+  <div className="mb-6">
+    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+      Tools Intelligence
+    </div>
+
+    <h2 className="mt-1 text-xl font-semibold text-slate-900">
+      {(toolsGroup?.difference ?? 0) >= 0
+        ? "What is driving Tools growth?"
+        : "What is driving the Tools decline?"}
+    </h2>
+
+    <p className="mt-2 text-sm text-slate-600">
+      Tools sales are{" "}
+      <span
+        className={
+          (toolsGroup?.difference ?? 0) >= 0
+            ? "font-semibold text-emerald-600"
+            : "font-semibold text-red-600"
+        }
+      >
+        {(toolsGroup?.difference ?? 0) >= 0 ? "up " : "down "}
+        {money(Math.abs(toolsGroup?.difference ?? 0))}
+      </span>{" "}
+      against the same period last year.
+    </p>
+  </div>
+
+  <div className="grid gap-4 md:grid-cols-4">
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+        {currentYear} YTD
+      </div>
+      <div className="mt-2 text-2xl font-semibold text-slate-900">
+        {money(toolsGroup?.currentSales ?? 0)}
+      </div>
+    </div>
+
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+        {previousYear} YTD
+      </div>
+      <div className="mt-2 text-2xl font-semibold text-slate-900">
+        {money(toolsGroup?.previousSales ?? 0)}
+      </div>
+    </div>
+
+    <div
+      className={`rounded-2xl border p-4 ${
+        (toolsGroup?.difference ?? 0) >= 0
+          ? "border-emerald-200 bg-emerald-50"
+          : "border-red-200 bg-red-50"
+      }`}
+    >
+      <div
+        className={`text-xs font-medium uppercase tracking-wide ${
+          (toolsGroup?.difference ?? 0) >= 0
+            ? "text-emerald-600"
+            : "text-red-600"
+        }`}
+      >
+        Movement
+      </div>
+      <div
+        className={`mt-2 text-2xl font-semibold ${
+          (toolsGroup?.difference ?? 0) >= 0
+            ? "text-emerald-700"
+            : "text-red-700"
+        }`}
+      >
+        {(toolsGroup?.difference ?? 0) >= 0 ? "+" : ""}
+        {money(toolsGroup?.difference ?? 0)}
+      </div>
+    </div>
+
+    <div
+      className={`rounded-2xl border p-4 ${
+        (toolsGroup?.percentage ?? 0) >= 0
+          ? "border-emerald-200 bg-emerald-50"
+          : "border-red-200 bg-red-50"
+      }`}
+    >
+      <div
+        className={`text-xs font-medium uppercase tracking-wide ${
+          (toolsGroup?.percentage ?? 0) >= 0
+            ? "text-emerald-600"
+            : "text-red-600"
+        }`}
+      >
+        Percentage
+      </div>
+      <div
+        className={`mt-2 text-2xl font-semibold ${
+          (toolsGroup?.percentage ?? 0) >= 0
+            ? "text-emerald-700"
+            : "text-red-700"
+        }`}
+      >
+        {(toolsGroup?.percentage ?? 0) >= 0 ? "+" : ""}
+        {(toolsGroup?.percentage ?? 0).toFixed(1)}%
+      </div>
+    </div>
+  </div>
+
+  <div className="mt-6 grid gap-6 lg:grid-cols-2">
+    {(toolsGroup?.difference ?? 0) >= 0 ? (
+      <>
+        <div>
+          <div className="mb-3">
+            <h3 className="font-semibold text-slate-900">
+              Biggest Growth Contributors
+            </h3>
+            <p className="text-sm text-slate-500">
+              Customers contributing most to Tools growth.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            {toolGrowingCustomers.slice(0, 5).map((row) => (
+              <Link
+                key={row.id}
+                href={`/commercial/customers/${row.id}?products=top#product-performance`}
+                className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 transition hover:border-emerald-200 hover:bg-emerald-50"
+              >
+                <div className="min-w-0 pr-4">
+                  <div className="truncate font-medium text-slate-900">
+                    {row.name}
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {money(row.previousToolSales)} →{" "}
+                    {money(row.currentToolSales)}
+                  </div>
+                </div>
+
+                <div className="shrink-0 font-semibold text-emerald-600">
+                  +{money(row.toolMovement)}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-3">
+            <h3 className="font-semibold text-slate-900">
+              Biggest Customer Declines
+            </h3>
+            <p className="text-sm text-slate-500">
+              Customers offsetting some of the Tools growth.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            {toolDecliningCustomers.slice(0, 5).map((row) => (
+              <Link
+                key={row.id}
+                href={`/commercial/customers/${row.id}?products=decline#product-performance`}
+                className="flex items-center justify-between rounded-xl border border-red-100 bg-red-50/60 px-4 py-3 transition hover:border-red-200 hover:bg-red-50"
+              >
+                <div className="min-w-0 pr-4">
+                  <div className="truncate font-medium text-slate-900">
+                    {row.name}
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {money(row.previousToolSales)} →{" "}
+                    {money(row.currentToolSales)}
+                  </div>
+                </div>
+
+                <div className="shrink-0 font-semibold text-red-600">
+                  {money(row.toolMovement)}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </>
+    ) : (
+      <>
+        <div>
+          <div className="mb-3">
+            <h3 className="font-semibold text-slate-900">
+              Biggest Customer Declines
+            </h3>
+            <p className="text-sm text-slate-500">
+              Customers contributing most to the Tools decline.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            {toolDecliningCustomers.slice(0, 5).map((row) => (
+              <Link
+                key={row.id}
+                href={`/commercial/customers/${row.id}?products=decline#product-performance`}
+                className="flex items-center justify-between rounded-xl border border-red-100 bg-red-50/60 px-4 py-3 transition hover:border-red-200 hover:bg-red-50"
+              >
+                <div className="min-w-0 pr-4">
+                  <div className="truncate font-medium text-slate-900">
+                    {row.name}
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {money(row.previousToolSales)} →{" "}
+                    {money(row.currentToolSales)}
+                  </div>
+                </div>
+
+                <div className="shrink-0 font-semibold text-red-600">
+                  {money(row.toolMovement)}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-3">
+            <h3 className="font-semibold text-slate-900">
+              Growth Offsets
+            </h3>
+            <p className="text-sm text-slate-500">
+              Customers helping offset the Tools decline.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            {toolGrowingCustomers.slice(0, 5).map((row) => (
+              <Link
+                key={row.id}
+                href={`/commercial/customers/${row.id}?products=top#product-performance`}
+                className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 transition hover:border-emerald-200 hover:bg-emerald-50"
+              >
+                <div className="min-w-0 pr-4">
+                  <div className="truncate font-medium text-slate-900">
+                    {row.name}
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {money(row.previousToolSales)} →{" "}
+                    {money(row.currentToolSales)}
+                  </div>
+                </div>
+
+                <div className="shrink-0 font-semibold text-emerald-600">
+                  +{money(row.toolMovement)}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </>
+    )}
+  </div>
+
+  {toolStoppedCustomers.length > 0 && (
+    <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
+      <div className="mb-3">
+        <h3 className="font-semibold text-slate-900">
+          Stopped Buying Tools
+        </h3>
+        <p className="text-sm text-slate-600">
+          Customers who bought Tools in {previousYear} but have recorded no
+          Tools sales in {currentYear}.
+        </p>
+      </div>
+
+      <div className="grid gap-2 md:grid-cols-2">
+        {toolStoppedCustomers.map((row) => (
+          <Link
+            key={row.id}
+            href={`/commercial/customers/${row.id}?products=none#product-performance`}
+            className="flex items-center justify-between rounded-xl border border-amber-200 bg-white px-4 py-3 transition hover:bg-amber-50"
+          >
+            <span className="min-w-0 truncate font-medium text-slate-900">
+              {row.name}
+            </span>
+
+            <span className="ml-4 shrink-0 text-sm font-semibold text-amber-700">
+              {money(row.previousToolSales)}
+            </span>
+          </Link>
+        ))}
+      </div>
+    </div>
+  )}
+</section>
+{/* Pumps & Pump Packs Intelligence */}
+<section className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+  <div className="mb-6">
+    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+      Pumps & Pump Packs Intelligence
+    </div>
+
+    <h2 className="mt-1 text-xl font-semibold text-slate-900">
+      {(pumpsGroup?.difference ?? 0) >= 0
+        ? "What is driving Pumps & Pump Packs growth?"
+        : "What is driving the Pumps & Pump Packs decline?"}
+    </h2>
+
+    <p className="mt-2 text-sm text-slate-600">
+      Pumps & Pump Packs sales are{" "}
+      <span
+        className={
+          (pumpsGroup?.difference ?? 0) >= 0
+            ? "font-semibold text-emerald-600"
+            : "font-semibold text-red-600"
+        }
+      >
+        {(pumpsGroup?.difference ?? 0) >= 0 ? "up " : "down "}
+        {money(Math.abs(pumpsGroup?.difference ?? 0))}
+      </span>{" "}
+      against the same period last year.
+    </p>
+  </div>
+
+  <div className="grid gap-4 md:grid-cols-4">
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+        {currentYear} YTD
+      </div>
+      <div className="mt-2 text-2xl font-semibold text-slate-900">
+        {money(pumpsGroup?.currentSales ?? 0)}
+      </div>
+    </div>
+
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+        {previousYear} YTD
+      </div>
+      <div className="mt-2 text-2xl font-semibold text-slate-900">
+        {money(pumpsGroup?.previousSales ?? 0)}
+      </div>
+    </div>
+
+    <div
+      className={`rounded-2xl border p-4 ${
+        (pumpsGroup?.difference ?? 0) >= 0
+          ? "border-emerald-200 bg-emerald-50"
+          : "border-red-200 bg-red-50"
+      }`}
+    >
+      <div
+        className={`text-xs font-medium uppercase tracking-wide ${
+          (pumpsGroup?.difference ?? 0) >= 0
+            ? "text-emerald-600"
+            : "text-red-600"
+        }`}
+      >
+        Movement
+      </div>
+
+      <div
+        className={`mt-2 text-2xl font-semibold ${
+          (pumpsGroup?.difference ?? 0) >= 0
+            ? "text-emerald-700"
+            : "text-red-700"
+        }`}
+      >
+        {(pumpsGroup?.difference ?? 0) >= 0 ? "+" : ""}
+        {money(pumpsGroup?.difference ?? 0)}
+      </div>
+    </div>
+
+    <div
+      className={`rounded-2xl border p-4 ${
+        (pumpsGroup?.percentage ?? 0) >= 0
+          ? "border-emerald-200 bg-emerald-50"
+          : "border-red-200 bg-red-50"
+      }`}
+    >
+      <div
+        className={`text-xs font-medium uppercase tracking-wide ${
+          (pumpsGroup?.percentage ?? 0) >= 0
+            ? "text-emerald-600"
+            : "text-red-600"
+        }`}
+      >
+        Percentage
+      </div>
+
+      <div
+        className={`mt-2 text-2xl font-semibold ${
+          (pumpsGroup?.percentage ?? 0) >= 0
+            ? "text-emerald-700"
+            : "text-red-700"
+        }`}
+      >
+        {(pumpsGroup?.percentage ?? 0) >= 0 ? "+" : ""}
+        {(pumpsGroup?.percentage ?? 0).toFixed(1)}%
+      </div>
+    </div>
+  </div>
+
+  <div className="mt-6 grid gap-6 lg:grid-cols-2">
+    {(pumpsGroup?.difference ?? 0) >= 0 ? (
+      <>
+        <div>
+          <div className="mb-3">
+            <h3 className="font-semibold text-slate-900">
+              Biggest Growth Contributors
+            </h3>
+            <p className="text-sm text-slate-500">
+              Customers contributing most to Pumps & Pump Packs growth.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            {pumpGrowingCustomers.slice(0, 5).map((row) => (
+              <Link
+                key={row.id}
+                href={`/commercial/customers/${row.id}?products=top#product-performance`}
+                className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 transition hover:border-emerald-200 hover:bg-emerald-50"
+              >
+                <div className="min-w-0 pr-4">
+                  <div className="truncate font-medium text-slate-900">
+                    {row.name}
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {money(row.previousPumpSales)} →{" "}
+                    {money(row.currentPumpSales)}
+                  </div>
+                </div>
+
+                <div className="shrink-0 font-semibold text-emerald-600">
+                  +{money(row.pumpMovement)}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-3">
+            <h3 className="font-semibold text-slate-900">
+              Biggest Customer Declines
+            </h3>
+            <p className="text-sm text-slate-500">
+              Customers offsetting some of the Pumps & Pump Packs growth.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            {pumpDecliningCustomers.slice(0, 5).map((row) => (
+              <Link
+                key={row.id}
+                href={`/commercial/customers/${row.id}?products=decline#product-performance`}
+                className="flex items-center justify-between rounded-xl border border-red-100 bg-red-50/60 px-4 py-3 transition hover:border-red-200 hover:bg-red-50"
+              >
+                <div className="min-w-0 pr-4">
+                  <div className="truncate font-medium text-slate-900">
+                    {row.name}
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {money(row.previousPumpSales)} →{" "}
+                    {money(row.currentPumpSales)}
+                  </div>
+                </div>
+
+                <div className="shrink-0 font-semibold text-red-600">
+                  {money(row.pumpMovement)}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </>
+    ) : (
+      <>
+        <div>
+          <div className="mb-3">
+            <h3 className="font-semibold text-slate-900">
+              Biggest Customer Declines
+            </h3>
+            <p className="text-sm text-slate-500">
+              Customers contributing most to the Pumps & Pump Packs decline.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            {pumpDecliningCustomers.slice(0, 5).map((row) => (
+              <Link
+                key={row.id}
+                href={`/commercial/customers/${row.id}?products=decline#product-performance`}
+                className="flex items-center justify-between rounded-xl border border-red-100 bg-red-50/60 px-4 py-3 transition hover:border-red-200 hover:bg-red-50"
+              >
+                <div className="min-w-0 pr-4">
+                  <div className="truncate font-medium text-slate-900">
+                    {row.name}
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {money(row.previousPumpSales)} →{" "}
+                    {money(row.currentPumpSales)}
+                  </div>
+                </div>
+
+                <div className="shrink-0 font-semibold text-red-600">
+                  {money(row.pumpMovement)}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-3">
+            <h3 className="font-semibold text-slate-900">
+              Growth Offsets
+            </h3>
+            <p className="text-sm text-slate-500">
+              Customers helping offset the Pumps & Pump Packs decline.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            {pumpGrowingCustomers.slice(0, 5).map((row) => (
+              <Link
+                key={row.id}
+                href={`/commercial/customers/${row.id}?products=top#product-performance`}
+                className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 transition hover:border-emerald-200 hover:bg-emerald-50"
+              >
+                <div className="min-w-0 pr-4">
+                  <div className="truncate font-medium text-slate-900">
+                    {row.name}
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {money(row.previousPumpSales)} →{" "}
+                    {money(row.currentPumpSales)}
+                  </div>
+                </div>
+
+                <div className="shrink-0 font-semibold text-emerald-600">
+                  +{money(row.pumpMovement)}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </>
+    )}
+  </div>
+
+  {pumpStoppedCustomers.length > 0 && (
+    <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
+      <div className="mb-3">
+        <h3 className="font-semibold text-slate-900">
+          Stopped Buying Pumps & Pump Packs
+        </h3>
+        <p className="text-sm text-slate-600">
+          Customers who bought Pumps & Pump Packs in {previousYear} but have
+          recorded no sales in this category in {currentYear}.
+        </p>
+      </div>
+
+      <div className="grid gap-2 md:grid-cols-2">
+        {pumpStoppedCustomers.map((row) => (
+          <Link
+            key={row.id}
+            href={`/commercial/customers/${row.id}?products=none#product-performance`}
+            className="flex items-center justify-between rounded-xl border border-amber-200 bg-white px-4 py-3 transition hover:bg-amber-50"
+          >
+            <span className="min-w-0 truncate font-medium text-slate-900">
+              {row.name}
+            </span>
+
+            <span className="ml-4 shrink-0 text-sm font-semibold text-amber-700">
+              {money(row.previousPumpSales)}
+            </span>
+          </Link>
+        ))}
+      </div>
+    </div>
+  )}
+</section>
 {/* Pipe Intelligence */}
 <section className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
   <div className="mb-6">
@@ -3872,7 +5016,9 @@ subtitle={`Active ${buyingGroupDisplayName} members with no Hetta spend in ${cur
     </div>
 
     <h2 className="mt-1 text-xl font-semibold text-slate-900">
-      What is driving Pipe growth?
+      {(pipeGroup?.difference ?? 0) >= 0
+        ? "What is driving Pipe growth?"
+        : "What is driving the Pipe decline?"}
     </h2>
 
     <p className="mt-2 text-sm text-slate-600">
@@ -3970,77 +5116,155 @@ subtitle={`Active ${buyingGroupDisplayName} members with no Hetta spend in ${cur
   </div>
 
   <div className="mt-6 grid gap-6 lg:grid-cols-2">
-    <div>
-      <div className="mb-3">
-        <h3 className="font-semibold text-slate-900">
-          Biggest Growth Contributors
-        </h3>
-        <p className="text-sm text-slate-500">
-          Customers contributing most to Pipe growth.
-        </p>
-      </div>
+    {(pipeGroup?.difference ?? 0) >= 0 ? (
+      <>
+        <div>
+          <div className="mb-3">
+            <h3 className="font-semibold text-slate-900">
+              Biggest Growth Contributors
+            </h3>
+            <p className="text-sm text-slate-500">
+              Customers contributing most to Pipe growth.
+            </p>
+          </div>
 
-      <div className="space-y-2">
-        {pipeGrowingCustomers.slice(0, 5).map((row) => (
-          <Link
-            key={row.id}
-            href={`/commercial/customers/${row.id}?products=top#product-performance`}
-            className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 transition hover:border-emerald-200 hover:bg-emerald-50"
-          >
-            <div className="min-w-0 pr-4">
-              <div className="truncate font-medium text-slate-900">
-                {row.name}
-              </div>
+          <div className="space-y-2">
+            {pipeGrowingCustomers.slice(0, 5).map((row) => (
+              <Link
+                key={row.id}
+                href={`/commercial/customers/${row.id}?products=top#product-performance`}
+                className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 transition hover:border-emerald-200 hover:bg-emerald-50"
+              >
+                <div className="min-w-0 pr-4">
+                  <div className="truncate font-medium text-slate-900">
+                    {row.name}
+                  </div>
 
-              <div className="mt-1 text-xs text-slate-500">
-                {money(row.previousPipeSales)} →{" "}
-                {money(row.currentPipeSales)}
-              </div>
-            </div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {money(row.previousPipeSales)} →{" "}
+                    {money(row.currentPipeSales)}
+                  </div>
+                </div>
 
-            <div className="shrink-0 font-semibold text-emerald-600">
-              +{money(row.pipeMovement)}
-            </div>
-          </Link>
-        ))}
-      </div>
-    </div>
+                <div className="shrink-0 font-semibold text-emerald-600">
+                  +{money(row.pipeMovement)}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
 
-    <div>
-      <div className="mb-3">
-        <h3 className="font-semibold text-slate-900">
-          Biggest Customer Declines
-        </h3>
-        <p className="text-sm text-slate-500">
-          Customers offsetting some of the Pipe growth.
-        </p>
-      </div>
+        <div>
+          <div className="mb-3">
+            <h3 className="font-semibold text-slate-900">
+              Biggest Customer Declines
+            </h3>
+            <p className="text-sm text-slate-500">
+              Customers offsetting some of the Pipe growth.
+            </p>
+          </div>
 
-      <div className="space-y-2">
-        {pipeDecliningCustomers.slice(0, 5).map((row) => (
-          <Link
-            key={row.id}
-            href={`/commercial/customers/${row.id}?products=decline#product-performance`}
-            className="flex items-center justify-between rounded-xl border border-red-100 bg-red-50/60 px-4 py-3 transition hover:border-red-200 hover:bg-red-50"
-          >
-            <div className="min-w-0 pr-4">
-              <div className="truncate font-medium text-slate-900">
-                {row.name}
-              </div>
+          <div className="space-y-2">
+            {pipeDecliningCustomers.slice(0, 5).map((row) => (
+              <Link
+                key={row.id}
+                href={`/commercial/customers/${row.id}?products=decline#product-performance`}
+                className="flex items-center justify-between rounded-xl border border-red-100 bg-red-50/60 px-4 py-3 transition hover:border-red-200 hover:bg-red-50"
+              >
+                <div className="min-w-0 pr-4">
+                  <div className="truncate font-medium text-slate-900">
+                    {row.name}
+                  </div>
 
-              <div className="mt-1 text-xs text-slate-500">
-                {money(row.previousPipeSales)} →{" "}
-                {money(row.currentPipeSales)}
-              </div>
-            </div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {money(row.previousPipeSales)} →{" "}
+                    {money(row.currentPipeSales)}
+                  </div>
+                </div>
 
-            <div className="shrink-0 font-semibold text-red-600">
-              {money(row.pipeMovement)}
-            </div>
-          </Link>
-        ))}
-      </div>
-    </div>
+                <div className="shrink-0 font-semibold text-red-600">
+                  {money(row.pipeMovement)}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </>
+    ) : (
+      <>
+        <div>
+          <div className="mb-3">
+            <h3 className="font-semibold text-slate-900">
+              Biggest Customer Declines
+            </h3>
+            <p className="text-sm text-slate-500">
+              Customers contributing most to lost Pipe sales.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            {pipeDecliningCustomers.slice(0, 5).map((row) => (
+              <Link
+                key={row.id}
+                href={`/commercial/customers/${row.id}?products=decline#product-performance`}
+                className="flex items-center justify-between rounded-xl border border-red-100 bg-red-50/60 px-4 py-3 transition hover:border-red-200 hover:bg-red-50"
+              >
+                <div className="min-w-0 pr-4">
+                  <div className="truncate font-medium text-slate-900">
+                    {row.name}
+                  </div>
+
+                  <div className="mt-1 text-xs text-slate-500">
+                    {money(row.previousPipeSales)} →{" "}
+                    {money(row.currentPipeSales)}
+                  </div>
+                </div>
+
+                <div className="shrink-0 font-semibold text-red-600">
+                  {money(row.pipeMovement)}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-3">
+            <h3 className="font-semibold text-slate-900">
+              Growth Offsets
+            </h3>
+            <p className="text-sm text-slate-500">
+              Customers generating additional Pipe sales.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            {pipeGrowingCustomers.slice(0, 5).map((row) => (
+              <Link
+                key={row.id}
+                href={`/commercial/customers/${row.id}?products=top#product-performance`}
+                className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 transition hover:border-emerald-200 hover:bg-emerald-50"
+              >
+                <div className="min-w-0 pr-4">
+                  <div className="truncate font-medium text-slate-900">
+                    {row.name}
+                  </div>
+
+                  <div className="mt-1 text-xs text-slate-500">
+                    {money(row.previousPipeSales)} →{" "}
+                    {money(row.currentPipeSales)}
+                  </div>
+                </div>
+
+                <div className="shrink-0 font-semibold text-emerald-600">
+                  +{money(row.pipeMovement)}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </>
+    )}
   </div>
 
   {pipeStoppedCustomers.length > 0 && (
@@ -4076,7 +5300,9 @@ subtitle={`Active ${buyingGroupDisplayName} members with no Hetta spend in ${cur
     </div>
   )}
 </section>
-{/* Manifolds Intelligence */}
+
+ {/* Controls Intelligence */}
+ {/* Manifolds Intelligence */}
 <section className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
   <div className="mb-6">
     <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -4084,8 +5310,10 @@ subtitle={`Active ${buyingGroupDisplayName} members with no Hetta spend in ${cur
     </div>
 
     <h2 className="mt-1 text-xl font-semibold text-slate-900">
-      What is happening with Manifold sales?
-    </h2>
+  {(manifoldsGroup?.difference ?? 0) >= 0
+    ? "What is driving Manifold growth?"
+    : "What is driving the Manifold decline?"}
+</h2>
 
     <p className="mt-2 text-sm text-slate-600">
       Manifold sales are{" "}
@@ -4181,79 +5409,157 @@ subtitle={`Active ${buyingGroupDisplayName} members with no Hetta spend in ${cur
     </div>
   </div>
 
-  <div className="mt-6 grid gap-6 lg:grid-cols-2">
-    <div>
-      <div className="mb-3">
-        <h3 className="font-semibold text-slate-900">
-          Biggest Customer Declines
-        </h3>
-        <p className="text-sm text-slate-500">
-          Customers contributing most to lost Manifold sales.
-        </p>
-      </div>
+ <div className="mt-6 grid gap-6 lg:grid-cols-2">
+  {(manifoldsGroup?.difference ?? 0) >= 0 ? (
+    <>
+      <div>
+        <div className="mb-3">
+          <h3 className="font-semibold text-slate-900">
+            Biggest Growth Contributors
+          </h3>
+          <p className="text-sm text-slate-500">
+            Customers contributing most to Manifold growth.
+          </p>
+        </div>
 
-      <div className="space-y-2">
-        {manifoldDecliningCustomers.slice(0, 5).map((row) => (
-          <Link
-            key={row.id}
-            href={`/commercial/customers/${row.id}?products=decline#product-performance`}
-            className="flex items-center justify-between rounded-xl border border-red-100 bg-red-50/60 px-4 py-3 transition hover:border-red-200 hover:bg-red-50"
-          >
-            <div className="min-w-0 pr-4">
-              <div className="truncate font-medium text-slate-900">
-                {row.name}
+        <div className="space-y-2">
+          {manifoldGrowingCustomers.slice(0, 5).map((row) => (
+            <Link
+              key={row.id}
+              href={`/commercial/customers/${row.id}?products=top#product-performance`}
+              className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 transition hover:border-emerald-200 hover:bg-emerald-50"
+            >
+              <div className="min-w-0 pr-4">
+                <div className="truncate font-medium text-slate-900">
+                  {row.name}
+                </div>
+
+                <div className="mt-1 text-xs text-slate-500">
+                  {money(row.previousManifoldSales)} →{" "}
+                  {money(row.currentManifoldSales)}
+                </div>
               </div>
 
-              <div className="mt-1 text-xs text-slate-500">
-                {money(row.previousManifoldSales)} →{" "}
-                {money(row.currentManifoldSales)}
+              <div className="shrink-0 font-semibold text-emerald-600">
+                +{money(row.manifoldMovement)}
               </div>
-            </div>
-
-            <div className="shrink-0 font-semibold text-red-600">
-              {money(row.manifoldMovement)}
-            </div>
-          </Link>
-        ))}
-      </div>
-    </div>
-
-    <div>
-      <div className="mb-3">
-        <h3 className="font-semibold text-slate-900">
-          Growth Offsets
-        </h3>
-        <p className="text-sm text-slate-500">
-          Customers generating additional Manifold sales.
-        </p>
+            </Link>
+          ))}
+        </div>
       </div>
 
-      <div className="space-y-2">
-        {manifoldGrowingCustomers.slice(0, 5).map((row) => (
-          <Link
-            key={row.id}
-            href={`/commercial/customers/${row.id}?products=top#product-performance`}
-            className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 transition hover:border-emerald-200 hover:bg-emerald-50"
-          >
-            <div className="min-w-0 pr-4">
-              <div className="truncate font-medium text-slate-900">
-                {row.name}
+      <div>
+        <div className="mb-3">
+          <h3 className="font-semibold text-slate-900">
+            Biggest Customer Declines
+          </h3>
+          <p className="text-sm text-slate-500">
+            Customers offsetting some of the Manifold growth.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          {manifoldDecliningCustomers.slice(0, 5).map((row) => (
+            <Link
+              key={row.id}
+              href={`/commercial/customers/${row.id}?products=decline#product-performance`}
+              className="flex items-center justify-between rounded-xl border border-red-100 bg-red-50/60 px-4 py-3 transition hover:border-red-200 hover:bg-red-50"
+            >
+              <div className="min-w-0 pr-4">
+                <div className="truncate font-medium text-slate-900">
+                  {row.name}
+                </div>
+
+                <div className="mt-1 text-xs text-slate-500">
+                  {money(row.previousManifoldSales)} →{" "}
+                  {money(row.currentManifoldSales)}
+                </div>
               </div>
 
-              <div className="mt-1 text-xs text-slate-500">
-                {money(row.previousManifoldSales)} →{" "}
-                {money(row.currentManifoldSales)}
+              <div className="shrink-0 font-semibold text-red-600">
+                {money(row.manifoldMovement)}
               </div>
-            </div>
-
-            <div className="shrink-0 font-semibold text-emerald-600">
-              +{money(row.manifoldMovement)}
-            </div>
-          </Link>
-        ))}
+            </Link>
+          ))}
+        </div>
       </div>
-    </div>
-  </div>
+    </>
+  ) : (
+    <>
+      <div>
+        <div className="mb-3">
+          <h3 className="font-semibold text-slate-900">
+            Biggest Customer Declines
+          </h3>
+          <p className="text-sm text-slate-500">
+            Customers contributing most to lost Manifold sales.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          {manifoldDecliningCustomers.slice(0, 5).map((row) => (
+            <Link
+              key={row.id}
+              href={`/commercial/customers/${row.id}?products=decline#product-performance`}
+              className="flex items-center justify-between rounded-xl border border-red-100 bg-red-50/60 px-4 py-3 transition hover:border-red-200 hover:bg-red-50"
+            >
+              <div className="min-w-0 pr-4">
+                <div className="truncate font-medium text-slate-900">
+                  {row.name}
+                </div>
+
+                <div className="mt-1 text-xs text-slate-500">
+                  {money(row.previousManifoldSales)} →{" "}
+                  {money(row.currentManifoldSales)}
+                </div>
+              </div>
+
+              <div className="shrink-0 font-semibold text-red-600">
+                {money(row.manifoldMovement)}
+              </div>
+            </Link>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <div className="mb-3">
+          <h3 className="font-semibold text-slate-900">
+            Growth Offsets
+          </h3>
+          <p className="text-sm text-slate-500">
+            Customers helping offset the Manifold decline.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          {manifoldGrowingCustomers.slice(0, 5).map((row) => (
+            <Link
+              key={row.id}
+              href={`/commercial/customers/${row.id}?products=top#product-performance`}
+              className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 transition hover:border-emerald-200 hover:bg-emerald-50"
+            >
+              <div className="min-w-0 pr-4">
+                <div className="truncate font-medium text-slate-900">
+                  {row.name}
+                </div>
+
+                <div className="mt-1 text-xs text-slate-500">
+                  {money(row.previousManifoldSales)} →{" "}
+                  {money(row.currentManifoldSales)}
+                </div>
+              </div>
+
+              <div className="shrink-0 font-semibold text-emerald-600">
+                +{money(row.manifoldMovement)}
+              </div>
+            </Link>
+          ))}
+        </div>
+      </div>
+    </>
+  )}
+</div>
 
   {manifoldStoppedCustomers.length > 0 && (
     <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
@@ -4288,7 +5594,6 @@ subtitle={`Active ${buyingGroupDisplayName} members with no Hetta spend in ${cur
     </div>
   )}
 </section>
-{/* Controls Intelligence */}
 <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
   <div className="mb-6">
     <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -4296,12 +5601,20 @@ subtitle={`Active ${buyingGroupDisplayName} members with no Hetta spend in ${cur
     </div>
 
     <h2 className="mt-1 text-xl font-semibold text-slate-900">
-      What is driving the Controls decline?
+      What is driving the Controls{" "}
+      {(controlsGroup?.difference ?? 0) >= 0 ? "growth" : "decline"}?
     </h2>
 
     <p className="mt-2 text-sm text-slate-600">
-      Controls sales are down{" "}
-      <span className="font-semibold text-red-600">
+      Controls sales are{" "}
+      {(controlsGroup?.difference ?? 0) >= 0 ? "up" : "down"}{" "}
+      <span
+        className={`font-semibold ${
+          (controlsGroup?.difference ?? 0) >= 0
+            ? "text-emerald-600"
+            : "text-red-600"
+        }`}
+      >
         {money(Math.abs(controlsGroup?.difference ?? 0))}
       </span>{" "}
       against the same period last year.
@@ -4327,98 +5640,217 @@ subtitle={`Active ${buyingGroupDisplayName} members with no Hetta spend in ${cur
       </div>
     </div>
 
-    <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
-      <div className="text-xs font-medium uppercase tracking-wide text-red-600">
+    <div
+      className={`rounded-2xl border p-4 ${
+        (controlsGroup?.difference ?? 0) >= 0
+          ? "border-emerald-200 bg-emerald-50"
+          : "border-red-200 bg-red-50"
+      }`}
+    >
+      <div
+        className={`text-xs font-medium uppercase tracking-wide ${
+          (controlsGroup?.difference ?? 0) >= 0
+            ? "text-emerald-600"
+            : "text-red-600"
+        }`}
+      >
         Movement
       </div>
-      <div className="mt-2 text-2xl font-semibold text-red-700">
+
+      <div
+        className={`mt-2 text-2xl font-semibold ${
+          (controlsGroup?.difference ?? 0) >= 0
+            ? "text-emerald-700"
+            : "text-red-700"
+        }`}
+      >
+        {(controlsGroup?.difference ?? 0) >= 0 ? "+" : ""}
         {money(controlsGroup?.difference ?? 0)}
       </div>
     </div>
 
-    <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
-      <div className="text-xs font-medium uppercase tracking-wide text-red-600">
+    <div
+      className={`rounded-2xl border p-4 ${
+        (controlsGroup?.percentage ?? 0) >= 0
+          ? "border-emerald-200 bg-emerald-50"
+          : "border-red-200 bg-red-50"
+      }`}
+    >
+      <div
+        className={`text-xs font-medium uppercase tracking-wide ${
+          (controlsGroup?.percentage ?? 0) >= 0
+            ? "text-emerald-600"
+            : "text-red-600"
+        }`}
+      >
         Percentage
       </div>
-      <div className="mt-2 text-2xl font-semibold text-red-700">
+
+      <div
+        className={`mt-2 text-2xl font-semibold ${
+          (controlsGroup?.percentage ?? 0) >= 0
+            ? "text-emerald-700"
+            : "text-red-700"
+        }`}
+      >
+        {(controlsGroup?.percentage ?? 0) >= 0 ? "+" : ""}
         {(controlsGroup?.percentage ?? 0).toFixed(1)}%
       </div>
     </div>
   </div>
 
   <div className="mt-6 grid gap-6 lg:grid-cols-2">
-    <div>
-      <div className="mb-3">
-        <h3 className="font-semibold text-slate-900">
-          Biggest Customer Declines
-        </h3>
-        <p className="text-sm text-slate-500">
-          Customers contributing most to the Controls decline.
-        </p>
-      </div>
+    {(controlsGroup?.difference ?? 0) >= 0 ? (
+      <>
+        <div>
+          <div className="mb-3">
+            <h3 className="font-semibold text-slate-900">
+              Biggest Growth Contributors
+            </h3>
+            <p className="text-sm text-slate-500">
+              Customers contributing most to the Controls growth.
+            </p>
+          </div>
 
-      <div className="space-y-2">
-        {controlDecliningCustomers.slice(0, 5).map((row) => (
-          <Link
-            key={row.id}
-            href={`/commercial/customers/${row.id}?products=decline#product-performance`}
-            className="flex items-center justify-between rounded-xl border border-red-100 bg-red-50/60 px-4 py-3 transition hover:border-red-200 hover:bg-red-50"
-          >
-            <div className="min-w-0 pr-4">
-              <div className="truncate font-medium text-slate-900">
-                {row.name}
-              </div>
+          <div className="space-y-2">
+            {controlGrowingCustomers.slice(0, 5).map((row) => (
+              <Link
+                key={row.id}
+                href={`/commercial/customers/${row.id}?products=top#product-performance`}
+                className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 transition hover:border-emerald-200 hover:bg-emerald-50"
+              >
+                <div className="min-w-0 pr-4">
+                  <div className="truncate font-medium text-slate-900">
+                    {row.name}
+                  </div>
 
-              <div className="mt-1 text-xs text-slate-500">
-                {money(row.previousControlSales)} →{" "}
-                {money(row.currentControlSales)}
-              </div>
-            </div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {money(row.previousControlSales)} →{" "}
+                    {money(row.currentControlSales)}
+                  </div>
+                </div>
 
-            <div className="shrink-0 font-semibold text-red-600">
-              {money(row.controlMovement)}
-            </div>
-          </Link>
-        ))}
-      </div>
-    </div>
+                <div className="shrink-0 font-semibold text-emerald-600">
+                  +{money(row.controlMovement)}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
 
-    <div>
-      <div className="mb-3">
-        <h3 className="font-semibold text-slate-900">
-          Growth Offsets
-        </h3>
-        <p className="text-sm text-slate-500">
-          Customers helping offset the Controls decline.
-        </p>
-      </div>
+        <div>
+          <div className="mb-3">
+            <h3 className="font-semibold text-slate-900">
+              Biggest Customer Declines
+            </h3>
+            <p className="text-sm text-slate-500">
+              Customers offsetting some of the Controls growth.
+            </p>
+          </div>
 
-      <div className="space-y-2">
-        {controlGrowingCustomers.slice(0, 5).map((row) => (
-          <Link
-            key={row.id}
-            href={`/commercial/customers/${row.id}?products=top#product-performance`}
-            className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 transition hover:border-emerald-200 hover:bg-emerald-50"
-          >
-            <div className="min-w-0 pr-4">
-              <div className="truncate font-medium text-slate-900">
-                {row.name}
-              </div>
+          <div className="space-y-2">
+            {controlDecliningCustomers.slice(0, 5).map((row) => (
+              <Link
+                key={row.id}
+                href={`/commercial/customers/${row.id}?products=decline#product-performance`}
+                className="flex items-center justify-between rounded-xl border border-red-100 bg-red-50/60 px-4 py-3 transition hover:border-red-200 hover:bg-red-50"
+              >
+                <div className="min-w-0 pr-4">
+                  <div className="truncate font-medium text-slate-900">
+                    {row.name}
+                  </div>
 
-              <div className="mt-1 text-xs text-slate-500">
-                {money(row.previousControlSales)} →{" "}
-                {money(row.currentControlSales)}
-              </div>
-            </div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {money(row.previousControlSales)} →{" "}
+                    {money(row.currentControlSales)}
+                  </div>
+                </div>
 
-            <div className="shrink-0 font-semibold text-emerald-600">
-              +{money(row.controlMovement)}
-            </div>
-          </Link>
-        ))}
-      </div>
-    </div>
+                <div className="shrink-0 font-semibold text-red-600">
+                  {money(row.controlMovement)}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </>
+    ) : (
+      <>
+        <div>
+          <div className="mb-3">
+            <h3 className="font-semibold text-slate-900">
+              Biggest Customer Declines
+            </h3>
+            <p className="text-sm text-slate-500">
+              Customers contributing most to the Controls decline.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            {controlDecliningCustomers.slice(0, 5).map((row) => (
+              <Link
+                key={row.id}
+                href={`/commercial/customers/${row.id}?products=decline#product-performance`}
+                className="flex items-center justify-between rounded-xl border border-red-100 bg-red-50/60 px-4 py-3 transition hover:border-red-200 hover:bg-red-50"
+              >
+                <div className="min-w-0 pr-4">
+                  <div className="truncate font-medium text-slate-900">
+                    {row.name}
+                  </div>
+
+                  <div className="mt-1 text-xs text-slate-500">
+                    {money(row.previousControlSales)} →{" "}
+                    {money(row.currentControlSales)}
+                  </div>
+                </div>
+
+                <div className="shrink-0 font-semibold text-red-600">
+                  {money(row.controlMovement)}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-3">
+            <h3 className="font-semibold text-slate-900">
+              Growth Offsets
+            </h3>
+            <p className="text-sm text-slate-500">
+              Customers helping offset the Controls decline.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            {controlGrowingCustomers.slice(0, 5).map((row) => (
+              <Link
+                key={row.id}
+                href={`/commercial/customers/${row.id}?products=top#product-performance`}
+                className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 transition hover:border-emerald-200 hover:bg-emerald-50"
+              >
+                <div className="min-w-0 pr-4">
+                  <div className="truncate font-medium text-slate-900">
+                    {row.name}
+                  </div>
+
+                  <div className="mt-1 text-xs text-slate-500">
+                    {money(row.previousControlSales)} →{" "}
+                    {money(row.currentControlSales)}
+                  </div>
+                </div>
+
+                <div className="shrink-0 font-semibold text-emerald-600">
+                  +{money(row.controlMovement)}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </>
+    )}
   </div>
+
 
   {controlStoppedCustomers.length > 0 && (
     <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
@@ -4451,8 +5883,9 @@ subtitle={`Active ${buyingGroupDisplayName} members with no Hetta spend in ${cur
         ))}
       </div>
     </div>
-  )}
+    )}
 </section>
+
 
 <section className="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white">
   <div className="border-b border-slate-200 px-5 py-4">
