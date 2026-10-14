@@ -491,13 +491,21 @@ const productView =
     );
 
   const previousYearSales =
-    calculateNetSalesYTD(
-      invoices,
-      previousYear,
-      today
-    );
+  calculateNetSalesYTD(
+    invoices,
+    previousYear,
+    today
+  );
 
-  const salesMovement =
+const previousYearFullSales =
+  calculateNetSalesForYear(
+    invoices,
+    previousYear
+  );
+const currentVsPreviousFullYear =
+  currentYearSales - previousYearFullSales;
+
+const salesMovement =
     previousYearSales !== 0
       ? ((currentYearSales -
           previousYearSales) /
@@ -2474,7 +2482,7 @@ if (!customer) {
           Credits reduce sales and cancelled transactions are excluded.
         </p>
 
-        <div className="mt-5 grid gap-4 md:grid-cols-3">
+        <div className="mt-5 grid gap-4 md:grid-cols-4">
           <div className="rounded-lg bg-slate-50 p-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               {currentYear} Sales
@@ -2488,16 +2496,33 @@ if (!customer) {
           </div>
 
           <div className="rounded-lg bg-slate-50 p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              {previousYear} Sales
-            </p>
+  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+    {previousYear} Same Period
+  </p>
 
-            <p className="mt-2 text-2xl font-bold text-slate-950">
-              {formatMoney(
-                previousYearSales
-              )}
-            </p>
-          </div>
+  <p className="mt-2 text-2xl font-bold text-slate-950">
+    {formatMoney(
+      previousYearSales
+    )}
+  </p>
+</div>
+
+<div className="rounded-lg bg-slate-50 p-4">
+  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+    {previousYear} Full Year
+  </p>
+
+  <p className="mt-2 text-2xl font-bold text-slate-950">
+    {formatMoney(
+      previousYearFullSales
+    )}
+  </p>
+  {currentVsPreviousFullYear > 0 && (
+  <p className="mt-1 text-sm font-semibold text-emerald-700">
+    {currentYear} already +{formatMoney(currentVsPreviousFullYear)} ahead
+  </p>
+)}
+</div>
 
           <div
             className={`rounded-lg p-4 ${
