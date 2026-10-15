@@ -1,3 +1,4 @@
+
 export type CommercialSalesTransaction = {
   invoiceType: string | null;
   customerOrderNumber: string | null;
@@ -63,14 +64,18 @@ export function isSalesInvoice(
 }
 
 /*
- * This is OdinIQ's single rule for commercial sales:
+ * OdinIQ's commercial sales calculation:
  *
  * Invoice      = positive net sales
  * Credit       = negative net sales
  * Cancellation = zero
  *
- * Math.abs() protects us if Sage supplies a credit
- * as either a positive or negative value.
+ * Sage invoice types supported include:
+ * - Product Invoice (from SOP)
+ * - Product Invoice
+ * - Product Credit Note
+ * - INV / INVOICE
+ * - CRD / CREDIT
  */
 export function commercialNetValue(
   transaction: CommercialSalesTransaction
@@ -80,6 +85,10 @@ export function commercialNetValue(
   }
 
   const value = Number(transaction.netValue ?? 0);
+
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
 
   if (isCreditNote(transaction)) {
     return -Math.abs(value);
@@ -108,8 +117,13 @@ export function calculateCreditValue<
   return transactions
     .filter(isCreditNote)
     .reduce(
-      (total, transaction) =>
-        total + Math.abs(Number(transaction.netValue ?? 0)),
+      (total, transaction) => {
+        const value = Number(transaction.netValue ?? 0);
+
+        return total + (
+          Number.isFinite(value) ? Math.abs(value) : 0
+        );
+      },
       0
     );
 }
@@ -125,7 +139,7 @@ export function calculateNetSalesForYear<
       return total;
     }
 
-    if (transaction.invoiceDate.getFullYear() !== year) {
+    if (new Date(transaction.invoiceDate).getFullYear() !== year) {
       return total;
     }
 
