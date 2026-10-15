@@ -141,7 +141,15 @@ export async function getCommercialIntelligence(
   if (!latestInvoiceDate) {
     return [];
   }
-
+  /*
+   * Shared website accounts are not individual customers.
+   * Exclude them from customer-specific intelligence only.
+   * Keep their invoices in sales and product reporting.
+   */
+  const excludedCustomerCodes =
+    companyId === 12
+      ? ["UFH-ONLI", "HALFPRIC"]
+      : [];
   /*
    * The latest invoice date is included in the
    * current 90-day period.
@@ -178,8 +186,9 @@ export async function getCommercialIntelligence(
           gte: previousPeriodStart,
           lt: currentPeriodEndExclusive,
         },
-        customerAccountCode: {
+                customerAccountCode: {
           not: null,
+          notIn: excludedCustomerCodes,
         },
       },
       select: {
@@ -501,8 +510,9 @@ export async function getCommercialIntelligence(
       ],
       where: {
         companyId,
-        customerAccountCode: {
+                customerAccountCode: {
           not: null,
+          notIn: excludedCustomerCodes,
         },
         invoiceDate: {
           lt: dormantCutoff,
@@ -521,8 +531,9 @@ export async function getCommercialIntelligence(
       by: ["customerAccountCode"],
       where: {
         companyId,
-        customerAccountCode: {
+                customerAccountCode: {
           not: null,
+          notIn: excludedCustomerCodes,
         },
         invoiceDate: {
           gte: dormantCutoff,
