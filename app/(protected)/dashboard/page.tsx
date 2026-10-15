@@ -75,10 +75,62 @@ export default async function DashboardPage() {
         permission.key === "tasks.complete"
     ) === true;
 
-  const intelligenceSignals =
-  await getCommercialIntelligence(companyId);
+   const intelligenceSignals =
+    await getCommercialIntelligence(companyId);
+
+  const [latestInvoice, latestImport] = await Promise.all([
+    prisma.salesInvoice.findFirst({
+      where: {
+        companyId,
+        invoiceDate: { not: null },
+      },
+      orderBy: {
+        invoiceDate: "desc",
+      },
+      select: {
+        invoiceDate: true,
+      },
+    }),
+
+        prisma.salesInvoice.findFirst({
+      where: {
+        companyId,
+      },
+      orderBy: {
+        importedAt: "desc",
+      },
+      select: {
+        importedAt: true,
+      },
+    }),
+  ]);
 
   const now = new Date();
+  const latestInvoiceDate = latestInvoice?.invoiceDate ?? null;
+  const latestImportDate = latestImport?.importedAt ?? null;
+
+  const daysSinceLatestInvoice = latestInvoiceDate
+    ? Math.max(
+        0,
+        Math.floor(
+          (Date.UTC(
+            now.getUTCFullYear(),
+            now.getUTCMonth(),
+            now.getUTCDate()
+          ) -
+            Date.UTC(
+              latestInvoiceDate.getUTCFullYear(),
+              latestInvoiceDate.getUTCMonth(),
+              latestInvoiceDate.getUTCDate()
+            )) /
+            86400000
+        )
+      )
+    : null;
+
+  const salesDataMayBeOutdated =
+    daysSinceLatestInvoice !== null &&
+    daysSinceLatestInvoice > 3;
 
   const startOfToday = new Date(
     now.getFullYear(),
@@ -261,7 +313,81 @@ export default async function DashboardPage() {
           overview.
         </p>
       </section>
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">
+              Sales Data Status
+            </p>
+            <p className="mt-1 text-sm text-slate-500">
+              Invoice data for the currently selected company
+            </p>
+          </div>
 
+          <span
+            className={`rounded-full px-3 py-1 text-xs font-semibold ${
+              !latestInvoiceDate
+                ? "bg-slate-100 text-slate-700"
+                : salesDataMayBeOutdated
+                  ? "bg-amber-100 text-amber-800"
+                  : "bg-green-100 text-green-800"
+            }`}
+          >
+            {!latestInvoiceDate
+              ? "No invoice data"
+              : salesDataMayBeOutdated
+                ? "Check data freshness"
+                : "Recently dated invoices"}
+          </span>
+        </div>
+
+        <div className="mt-4 grid gap-4 sm:grid-cols-3">
+          <div>
+            <p className="text-xs text-slate-500">Latest invoice</p>
+            <p className="mt-1 font-semibold text-slate-900">
+              {latestInvoiceDate
+                ? latestInvoiceDate.toLocaleDateString("en-GB", {
+                    timeZone: "UTC",
+                    day: "numeric",
+                    month: "long",
+                    year: "numeric",
+                  })
+                : "No invoices"}
+            </p>
+          </div>
+
+          <div>
+            <p className="text-xs text-slate-500">Last import</p>
+            <p className="mt-1 font-semibold text-slate-900">
+              {latestImportDate
+                ? latestImportDate.toLocaleDateString("en-GB", {
+                    timeZone: "UTC",
+                    day: "numeric",
+                    month: "long",
+                    year: "numeric",
+                  })
+                : "No imports"}
+            </p>
+          </div>
+
+          <div>
+            <p className="text-xs text-slate-500">Latest invoice age</p>
+            <p className="mt-1 font-semibold text-slate-900">
+              {daysSinceLatestInvoice === null
+                ? "Unknown"
+                : `${daysSinceLatestInvoice} calendar days`}
+            </p>
+          </div>
+        </div>
+
+        {salesDataMayBeOutdated && (
+          <p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+            Recent sales and customer activity may be incomplete.
+            Check whether the latest invoices have been imported.
+            Weekends and non-trading days can also explain gaps.
+          </p>
+        )}
+      </section>
       <section className="rounded-2xl border border-slate-200 bg-slate-950 p-6 text-white shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
