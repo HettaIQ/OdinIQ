@@ -853,6 +853,15 @@ model RebateScheme {
   paymentDate      DateTime?
   notes            String?
 
+  calculationFrequency String?
+  calculationBasis     String?
+  tierMethod           String?
+  retrospective        Boolean   @default(false)
+  paymentLagDays       Int?
+  effectiveFrom        DateTime?
+  effectiveTo          DateTime?
+  isActive             Boolean   @default(true)
+
   agreementId Int
   agreement   CommercialAgreement @relation(fields: [agreementId], references: [id], onDelete: Cascade)
 
@@ -1368,35 +1377,33 @@ model MeetingAction {
   @@index([dueDate])
 }
 
-
 model WebsiteEnquiry {
   id Int @id @default(autoincrement())
 
-  companyName String
-  contactName String
-  email       String
-  telephone   String?
+  companyName  String
+  contactName  String
+  email        String
+  telephone    String?
   requirements String?
 
-  packageName       String
-  totalUsers        Int
-  includedUsers     Int
-  additionalUsers   Int
-  userDiscount      Int
+  packageName     String
+  totalUsers      Int
+  includedUsers   Int
+  additionalUsers Int
+  userDiscount    Int
 
   selectedModules   String
   includedModules   Int
   additionalModules Int
 
-  status String @default("NEW")
-nextFollowUpAt DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  notes WebsiteEnquiryNote[]
+  status         String               @default("NEW")
+  nextFollowUpAt DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  notes          WebsiteEnquiryNote[]
 
   @@index([status, createdAt])
 }
-
 
 model WebsiteEnquiryNote {
   id        Int      @id @default(autoincrement())
@@ -1409,11 +1416,33 @@ model WebsiteEnquiryNote {
   @@index([enquiryId, createdAt])
 }
 
-
 model WebsiteEnquiryRateLimit {
-  id          Int      @id @default(autoincrement())
-  identifier  String
-  createdAt   DateTime @default(now())
+  id         Int      @id @default(autoincrement())
+  identifier String
+  createdAt  DateTime @default(now())
 
   @@index([identifier, createdAt])
+}
+
+model SalesForecastOverride {
+  id Int @id @default(autoincrement())
+
+  companyId      Int
+  customerId     Int
+  businessUnitId Int
+  forecastYear   Int
+
+  projectedAnnualSales Float
+  reason               String?
+
+  createdByUserId Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  isActive            Boolean   @default(true)
+  deactivatedByUserId Int?
+  deactivatedAt       DateTime?
+  deactivationReason  String?
+
+  @@index([companyId, customerId, businessUnitId, forecastYear])
 }

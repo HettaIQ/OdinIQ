@@ -47,6 +47,7 @@ type CustomerDetailPageProps = {
   activityPeriod?: string;
   activityFrom?: string;
   activityTo?: string;
+ businessUnitId?: string;
 }>;
 };
 
@@ -209,7 +210,27 @@ export default async function CustomerDetailPage({
     Boolean(
       profitabilityPermission
     );
+const forecastPermission =
+  membership.role?.id
+    ? await prisma.rolePermission.findFirst({
+        where: {
+          roleId: membership.role.id,
+          permission: {
+            key: {
+              in: [
+                "commercial.forecast.view",
+                "commercial.forecast.manage",
+              ],
+            },
+          },
+        },
+        select: {
+          roleId: true,
+        },
+      })
+    : null;
 
+const canViewForecast = Boolean(forecastPermission);
   const { customerId } =
     await params;
 
@@ -220,7 +241,42 @@ export default async function CustomerDetailPage({
   activityPeriod,
   activityFrom,
   activityTo,
+businessUnitId,
 } = await searchParams;
+
+const requestedBusinessUnitId =
+  businessUnitId === undefined ||
+  businessUnitId === "all"
+    ? null
+    : Number(businessUnitId);
+
+const selectedBusinessUnitId =
+  requestedBusinessUnitId !== null &&
+  Number.isInteger(requestedBusinessUnitId) &&
+  requestedBusinessUnitId > 0
+    ? requestedBusinessUnitId
+    : null;
+const availableBusinessUnits =
+  await prisma.businessUnit.findMany({
+    where: {
+      companyId,
+    },
+    select: {
+      id: true,
+      name: true,
+    },
+    orderBy: {
+      id: "asc",
+    },
+  });
+
+const validatedBusinessUnitId =
+  selectedBusinessUnitId !== null &&
+  availableBusinessUnits.some(
+    (unit) => unit.id === selectedBusinessUnitId
+  )
+    ? selectedBusinessUnitId
+    : null;
 
 const productView =
   products === "new"
@@ -365,29 +421,61 @@ const productView =
   if (!customer) {
     notFound();
   }
+/*
+ * Include the current customer and its directly
+ * linked accounts in the sales activity.
+ */
+const linkedCustomerAccounts =
+  await prisma.customer.findMany({
+    where: {
+      companyId,
+      parentCustomerId: customer.id,
 
+      ...(isAgent
+        ? {
+            assignedMembershipId: membership.id,
+          }
+        : {}),
+    },
+    select: {
+      accountCode: true,
+    },
+  });
+
+const salesAccountCodes = [
+  customer.accountCode,
+  ...linkedCustomerAccounts.map(
+    (account) => account.accountCode
+  ),
+];
   /*
    * Invoice lines are required for
    * product credit COGS reversals.
    */
   const invoices =
-    await prisma.salesInvoice.findMany({
-      where: {
-        companyId:
-          companyId,
+  await prisma.salesInvoice.findMany({
+    where: {
+      companyId,
 
-        customerAccountCode:
-          customer.accountCode,
+      customerAccountCode: {
+        in: salesAccountCodes,
       },
 
-      include: {
-        lines: true,
-      },
+      ...(validatedBusinessUnitId !== null
+        ? {
+            businessUnitId: validatedBusinessUnitId,
+          }
+        : {}),
+    },
 
-      orderBy: {
-        invoiceDate: "desc",
-      },
-    });
+    include: {
+      lines: true,
+    },
+
+    orderBy: {
+      invoiceDate: "desc",
+    },
+  });
 
   const cancelledInvoices =
     invoices.filter(
@@ -2375,14 +2463,27 @@ if (!customer) {
             </p>
           </div>
 
-          {!isAgent && (
-            <Link
-              href={`/commercial/customers/${customer.id}/edit`}
-              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-            >
-              Edit customer
-            </Link>
-          )}
+          
+<div className="flex flex-wrap items-center gap-2">
+  {canViewForecast && (
+    <Link
+      href={`/commercial/customers/${customer.id}/forecast`}
+      className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
+    >
+      Management Forecast
+    </Link>
+  )}
+
+  {!isAgent && (
+    <Link
+      href={`/commercial/customers/${customer.id}/edit`}
+      className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+    >
+      Edit customer
+    </Link>
+  )}
+</div>
+
         </div>
       </div>
 
