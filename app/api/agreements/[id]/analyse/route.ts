@@ -141,16 +141,23 @@ const {
     } finally {
       await parser.destroy();
     }
+const needsScannedPdfAnalysis =
+  documentText.length < 200;
 
-    if (!documentText) {
-      return NextResponse.json(
-        {
-          error:
-            "No readable text could be extracted from this PDF.",
-        },
-        { status: 400 }
-      );
-    }
+const documentInput = needsScannedPdfAnalysis
+  ? [
+      {
+        type: "input_file" as const,
+        filename: document.originalName,
+        file_data: `data:application/pdf;base64,${fileBuffer.toString("base64")}`,
+      },
+    ]
+  : [
+      {
+        type: "input_text" as const,
+        text: documentText,
+      },
+    ];
 
     const response = await openai.responses.create({
       model: "gpt-5-mini",
@@ -158,18 +165,62 @@ const {
         {
           role: "system",
           content:
-            "You are OdinIQ, a commercial agreement analysis assistant. Extract commercial terms only when they are explicitly supported by the supplied agreement text. Never invent or assume missing terms. Return null when a term cannot be established. Discount and rebate must be returned as percentage strings such as 53% or 12%. Payment terms should preserve the commercial wording where possible, for example 60 EOM or 30 days. Renewal date must be DD/MM/YYYY. Notice period should be concise, for example 60 days or 3 months.",
+            `You are OdinIQ, a commercial agreement analysis assistant.
+
+Read the entire supplied agreement carefully, including scanned pages.
+
+Extract only commercial terms explicitly supported by the document.
+
+IMPORTANT EXTRACTION RULES:
+
+DISCOUNT:
+- Extract the standard trading discount from the PRICING TERMS section.
+- "List less 50%" means a standard discount of 50%.
+- Do not confuse standard discounts with promotional discounts,
+  new-branch discounts, settlement discounts or special offers.
+
+REBATE:
+- Extract the standard recurring rebate.
+- Prefer the explicitly labelled quarterly rebate when present.
+- Do not confuse quarterly rebates with annual growth rebates.
+- Annual rebate thresholds must be analysed separately.
+
+PAYMENT TERMS:
+- Extract the supplier's standard invoice payment terms.
+- Do not use rebate collection or rebate settlement terms
+  as invoice payment terms.
+- Return null if invoice payment terms are not established.
+
+RENEWAL DATE:
+- Return an explicit contractual renewal date only.
+- Do not infer one from signature dates or pricing periods.
+
+NOTICE PERIOD:
+- Extract the notice period for terminating or renewing the agreement.
+- Do not confuse it with price increase notification requirements.
+- Return null if no contractual termination notice period is stated.
+
+GENERAL:
+- Never invent missing terms.
+- Return null when a term cannot be established.
+- Discount and rebate must be percentage strings, such as "50%" or "16%".
+- Renewal dates must use DD/MM/YYYY.
+- Return only the requested structured JSON.`
         },
-        {
-          role: "user",
-          content: [
-            `Agreement customer: ${agreement.customerName}`,
-            `Agreement name: ${agreement.agreementName}`,
-            "",
-            "DOCUMENT TEXT:",
-            documentText,
-          ].join("\n"),
-        },
+       {
+  role: "user",
+  content: [
+    {
+      type: "input_text",
+      text: [
+        `Agreement customer: ${agreement.customerName}`,
+        `Agreement name: ${agreement.agreementName}`,
+        "Extract the commercial terms from the attached agreement.",
+      ].join("\n"),
+    },
+    ...documentInput,
+  ],
+},
       ],
       text: {
         format: {

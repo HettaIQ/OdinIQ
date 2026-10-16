@@ -344,8 +344,11 @@ model CustomerCommercialCost {
   customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   costDate DateTime
+  periodStart DateTime?
+periodEnd   DateTime?
 
   costType String
+  rebateCategory String?
 
   description String?
 

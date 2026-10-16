@@ -6,10 +6,12 @@ import { calculatePricingScenario } from "./calculations";
 type Props = {
   customerName: string;
   actualAnnualSales?: number;
+  actualProductCosts?: number;
 };
 export default function PricingSimulator({
   customerName,
   actualAnnualSales = 320000,
+  actualProductCosts,
 }: Props) {
   const [currentDiscount, setCurrentDiscount] = useState(50);
   const [proposedDiscount, setProposedDiscount] = useState(52.5);
@@ -19,7 +21,9 @@ export default function PricingSimulator({
   const [annualSales, setAnnualSales] = useState(
   Math.round(actualAnnualSales * 100) / 100
 );
-  const [productCosts, setProductCosts] = useState(200000);
+  const [productCosts, setProductCosts] = useState(
+  actualProductCosts ?? 200000
+);
   const [otherCommercialCosts, setOtherCommercialCosts] = useState(3000);
 
   const result = calculatePricingScenario({

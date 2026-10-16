@@ -1,3 +1,5 @@
+import RebateBreakdown from "./RebateBreakdown";
+import { calculateQuarterlyRebates, calculateAnnualRetrospectiveRebate } from "@/lib/commercial/periodRebateCalculations";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -34,7 +36,7 @@ import {
   addCustomerCommercialCost,
   deleteCustomerCommercialCost,
 } from "./commercialCostActions";
-
+import CommercialCostTypeFields from "./CommercialCostTypeFields";
 type CustomerDetailPageProps = {
   params: Promise<{
     customerId: string;
@@ -1333,8 +1335,17 @@ const meetingPriorities = [
         rebateAgreementName: string | null;
         rebateSource: string | null;
         rebateQualifyingSales: number;
+        rebateBreakdown: {
+          period: string;
+          sales: number;
+          rebatePercent: number;
+          estimated: number;
+          actual: number | null;
+          invoiceReference: string | null;
+        }[];
 
-        trueProfit: number;
+
+      trueProfit: number;
         trueMargin: number;
       }
     | null = null;
@@ -1343,7 +1354,9 @@ const meetingPriorities = [
     {
       id: number;
       costDate: Date;
-      costType: string;
+periodStart: Date | null;
+periodEnd: Date | null;
+costType: string;
       description: string | null;
       amount: number;
       source: string | null;
@@ -1781,7 +1794,9 @@ for (const alias of productAliases) {
         select: {
           id: true,
           costDate: true,
-          costType: true,
+periodStart: true,
+periodEnd: true,
+costType: true,
           description: true,
           amount: true,
           source: true,
@@ -1814,15 +1829,20 @@ for (const alias of productAliases) {
      */
 
     const agreementOrConditions:
-      {
-        customerId?: number;
-        buyingGroup?: string;
-      }[] = [
-        {
-          customerId:
-            customer.id,
-        },
-      ];
+  {
+    customerId?: number;
+    buyingGroup?: string;
+  }[] = [
+    {
+      customerId: customer.id,
+    },
+  ];
+
+if (customer.parentCustomerId) {
+  agreementOrConditions.push({
+    customerId: customer.parentCustomerId,
+  });
+}
 
     if (customer.buyingGroup) {
       agreementOrConditions.push({
@@ -1877,6 +1897,14 @@ for (const alias of productAliases) {
           agreement.customerId ===
           customer.id
       );
+const parentAgreement =
+  !customerAgreement && customer.parentCustomerId
+    ? applicableAgreements.find(
+        (agreement) =>
+          agreement.customerId ===
+          customer.parentCustomerId
+      )
+    : undefined;
 
     const buyingGroupAgreement =
       !customerAgreement &&
@@ -1895,9 +1923,12 @@ for (const alias of productAliases) {
         : undefined;
 
     const rebateAgreement =
-      customerAgreement ??
-      buyingGroupAgreement ??
-      null;
+  customerAgreement ??
+  parentAgreement ??
+  buyingGroupAgreement ??
+  null;
+
+    let rebateBreakdownRows: Array<{period:string;sales:number;rebatePercent:number;estimated:number;actual:number|null;invoiceReference:string|null}> = [];
 
     let automaticRebate: {
       rebatePercent: number;
@@ -1941,6 +1972,32 @@ for (const alias of productAliases) {
             )
         );
 
+      const quarterlyRebateResults = calculateQuarterlyRebates({
+        transactions: rebateEligibleCustomerInvoices,
+        schemes: rebateAgreement.rebates,
+        year: currentYear,
+      });
+      const annualRebateResult = calculateAnnualRetrospectiveRebate({
+        quarterlyResults: quarterlyRebateResults,
+        schemes: rebateAgreement.rebates,
+        year: currentYear,
+      });
+      rebateBreakdownRows = quarterlyRebateResults.map((result) => ({
+        period: result.period.split("-")[1],
+        sales: result.netSales,
+        rebatePercent: result.rebatePercent,
+        estimated: result.rebateValue,
+        actual: null,
+        invoiceReference: null,
+      }));
+      rebateBreakdownRows.push({
+        period: "Annual",
+        sales: annualRebateResult.netSales,
+        rebatePercent: annualRebateResult.rebatePercent,
+        estimated: annualRebateResult.rebateValue,
+        actual: null,
+        invoiceReference: null,
+      });
       const customerRebateSales =
         calculateNetSales(
           rebateEligibleCustomerInvoices
@@ -2120,6 +2177,7 @@ for (const alias of productAliases) {
       rebateQualifyingSales:
         automaticRebate.qualifyingSales,
 
+      rebateBreakdown: rebateBreakdownRows,
       trueProfit:
         trueProfit.trueProfit,
 
@@ -3375,9 +3433,22 @@ if (!customer) {
                 </p>
               </div>
 
-              <span className="w-fit rounded-full bg-violet-100 px-3 py-1 text-xs font-bold text-violet-700">
-                ADMIN / ACCOUNTS
-              </span>
+              <div className="flex flex-wrap items-center gap-3">
+  <Link
+    href={`/commercial/customers/${customer.id}/pricing-simulator${
+      validatedBusinessUnitId !== null
+        ? `?businessUnitId=${validatedBusinessUnitId}`
+        : ""
+    }`}
+    className="rounded-lg bg-violet-700 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-800"
+  >
+    Pricing Simulator →
+  </Link>
+
+  <span className="w-fit rounded-full bg-violet-100 px-3 py-1 text-xs font-bold text-violet-700">
+    ADMIN / ACCOUNTS
+  </span>
+</div>
             </div>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
@@ -3616,6 +3687,8 @@ if (!customer) {
               </div>
             )}
 
+            {profitability.rebateBreakdown.length > 0 && <RebateBreakdown rows={profitability.rebateBreakdown} />}
+
             <div className="mt-5 grid gap-4 md:grid-cols-3">
               <div className="rounded-lg border p-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -3758,50 +3831,7 @@ if (!customer) {
                   />
                 </div>
 
-                <div>
-                  <label
-                    htmlFor="costType"
-                    className="text-sm font-semibold text-slate-700"
-                  >
-                    Type
-                  </label>
-
-                  <select
-                    id="costType"
-                    name="costType"
-                    required
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  >
-                    <option value="REBATE">
-                      Rebate
-                    </option>
-
-                    <option value="AGENT_COMMISSION">
-                      Agent Commission
-                    </option>
-
-                    <option value="MERCHANDISE">
-                      Merchandise
-                    </option>
-
-                    <option value="ENTERTAINMENT">
-                      Entertainment
-                    </option>
-
-                    <option value="MARKETING">
-                      Marketing
-                    </option>
-
-                    <option value="CARRIAGE">
-                      Carriage
-                    </option>
-
-                    <option value="OTHER">
-                      Other
-                    </option>
-                  </select>
-                </div>
-
+                <CommercialCostTypeFields />
                 <div>
                   <label
                     htmlFor="amount"
@@ -3821,7 +3851,52 @@ if (!customer) {
                     className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                   />
                 </div>
+<div>
+  <label
+    htmlFor="sourceReference"
+    className="text-sm font-semibold text-slate-700"
+  >
+    Invoice / Reference Number
+  </label>
 
+  <input
+    id="sourceReference"
+    name="sourceReference"
+    type="text"
+    maxLength={100}
+    placeholder="e.g. IN176067"
+    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+  />
+</div>
+<div>
+  <label
+    htmlFor="periodStart"
+    className="text-sm font-semibold text-slate-700"
+  >
+    Period Start
+  </label>
+  <input
+    id="periodStart"
+    name="periodStart"
+    type="date"
+    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+  />
+</div>
+
+<div>
+  <label
+    htmlFor="periodEnd"
+    className="text-sm font-semibold text-slate-700"
+  >
+    Period End
+  </label>
+  <input
+    id="periodEnd"
+    name="periodEnd"
+    type="date"
+    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+  />
+</div>
                 <div>
                   <label
                     htmlFor="description"
@@ -3880,6 +3955,14 @@ if (!customer) {
                         Date
                       </th>
 
+<th className="px-4 py-3 text-left font-semibold text-slate-600">
+  Invoice Reference
+</th>
+
+<th className="px-4 py-3 text-left font-semibold text-slate-600">
+  Cost Period
+</th>
+
                       <th className="px-4 py-3 text-left font-semibold text-slate-600">
                         Type
                       </th>
@@ -3923,7 +4006,15 @@ if (!customer) {
                                 cost.costDate
                               )}
                             </td>
+<td className="px-4 py-3 text-slate-700">
+  {cost.sourceReference || "—"}
+</td>
 
+<td className="px-4 py-3 text-slate-700">
+  {cost.periodStart && cost.periodEnd
+    ? `${formatDate(cost.periodStart)} - ${formatDate(cost.periodEnd)}`
+    : "—"}
+</td>
                             <td className="px-4 py-3 font-semibold text-slate-950">
                               {cost.costType.replaceAll(
                                 "_",
@@ -3976,7 +4067,7 @@ if (!customer) {
                       0 && (
                       <tr>
                         <td
-                          colSpan={6}
+                          colSpan={8}
                           className="px-4 py-8 text-center text-slate-500"
                         >
                           No commercial costs have been recorded for {currentYear}.

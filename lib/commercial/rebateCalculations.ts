@@ -69,96 +69,65 @@ export function calculateAgreementRebate({
     };
   }
 
-  /*
-   * Detailed rebate schemes take
-   * priority over the simple agreement
-   * rebatePercent field.
-   */
-  const schemes =
-    agreement.rebates ?? [];
+  const schemes = agreement.rebates ?? [];
 
-  const applicableSchemes =
-    schemes.filter((scheme) =>
-      fallsWithinThreshold({
-        sales: netSales,
-        thresholdFrom:
-          scheme.thresholdFrom,
-        thresholdTo:
-          scheme.thresholdTo,
-      })
-    );
+  const applicableSchemes = schemes.filter((scheme) =>
+    fallsWithinThreshold({
+      sales: netSales,
+      thresholdFrom: scheme.thresholdFrom,
+      thresholdTo: scheme.thresholdTo,
+    })
+  );
 
-  if (
-    applicableSchemes.length > 0
-  ) {
-    /*
-     * For now we choose the highest
-     * applicable percentage.
-     *
-     * This supports schemes such as:
-     *
-     * £0-£100k       5%
-     * £100k-£250k    7%
-     * £250k+         10%
-     *
-     * without adding multiple tiers
-     * together.
-     */
-    const bestScheme =
-      [...applicableSchemes].sort(
-        (a, b) =>
-          Number(
-            b.rebatePercent ?? 0
-          ) -
-          Number(
-            a.rebatePercent ?? 0
-          )
-      )[0];
+  if (applicableSchemes.length > 0) {
+    // Different rebate types are additional.
+    // Within each type, only the highest applicable tier wins.
+    const highestByType = new Map<string, number>();
 
-    const rebatePercent =
-      Math.max(
+    for (const scheme of applicableSchemes) {
+      const type =
+        normalizeRebateType(scheme.rebateType) ||
+        "STANDARD";
+
+      const percent = Math.max(
         0,
-        Number(
-          bestScheme.rebatePercent ??
-            0
-        )
+        Number(scheme.rebatePercent ?? 0)
       );
+
+      highestByType.set(
+        type,
+        Math.max(highestByType.get(type) ?? 0, percent)
+      );
+    }
+
+    const rebatePercent = Array.from(
+      highestByType.values()
+    ).reduce((total, percent) => total + percent, 0);
 
     return {
       rebatePercent,
-
-      rebateValue:
-        netSales *
-        (rebatePercent / 100),
-
+      rebateValue: netSales * (rebatePercent / 100),
       source: "REBATE_SCHEME" as const,
-
       rebateType:
-        normalizeRebateType(
-          bestScheme.rebateType
-        ),
+        highestByType.size === 1
+          ? Array.from(highestByType.keys())[0]
+          : "COMBINED",
     };
   }
 
-  const rebatePercent =
-    Math.max(
-      0,
-      Number(
-        agreement.rebatePercent ??
-          0
-      )
-    );
+  const rebatePercent = Math.max(
+    0,
+    Number(agreement.rebatePercent ?? 0)
+  );
 
   return {
     rebatePercent,
-
-    rebateValue:
-      netSales *
-      (rebatePercent / 100),
-
+    rebateValue: netSales * (rebatePercent / 100),
     source:
       rebatePercent > 0
         ? ("AGREEMENT" as const)
         : ("NONE" as const),
   };
 }
+
+ 
