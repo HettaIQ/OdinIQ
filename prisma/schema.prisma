@@ -1449,3 +1449,110 @@ model SalesForecastOverride {
 
   @@index([companyId, customerId, businessUnitId, forecastYear])
 }
+// ==========================================
+// ODINIQ PRIVATE BUSINESS COSTS
+// Platform SUPER_ADMIN access only
+// ==========================================
+
+model OdinCostSettings {
+  id Int @id @default(autoincrement())
+
+  hourlyRate Float @default(50)
+
+  openingDevelopmentHours Float @default(402.9)
+  openingDevelopmentValue Float @default(20145)
+
+  openingBalanceDate DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model OdinExpense {
+  id Int @id @default(autoincrement())
+
+  expenseDate DateTime
+
+  supplier String
+  description String
+  category String
+
+  netAmount Float
+  vatAmount Float @default(0)
+  grossAmount Float
+
+  paymentMethod String?
+  fundedBy String @default("PERSONAL")
+
+  receiptPath String?
+
+  recurring Boolean @default(false)
+  recurringFrequency String?
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([expenseDate])
+  @@index([category])
+}
+
+model OdinDevelopmentTime {
+  id Int @id @default(autoincrement())
+
+  workDate DateTime
+  description String
+
+  hours Float
+  hourlyRate Float @default(50)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([workDate])
+}
+model OdinUserActivity {
+  id Int @id @default(autoincrement())
+
+  userId    Int
+  companyId Int
+  sessionId Int
+
+  startedAt DateTime @default(now())
+  endedAt   DateTime?
+
+  activeSeconds Int @default(0)
+idleSeconds   Int @default(0)
+wasActive     Boolean @default(false)
+
+  lastActivityAt DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, companyId])
+  @@index([sessionId])
+  @@index([companyId, lastActivityAt])
+}
+
+model OdinUserActivityDaily {
+  id Int @id @default(autoincrement())
+
+  userId    Int
+  companyId Int
+
+  activityDate DateTime
+
+  activeSeconds Int @default(0)
+  idleSeconds   Int @default(0)
+
+
+  lastActivityAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, companyId, activityDate])
+  @@index([companyId, activityDate])
+}
